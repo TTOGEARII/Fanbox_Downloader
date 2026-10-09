@@ -18,3 +18,4 @@ run.err.log
 # 구버전 콘솔 (로컬 보관용)
 legacy-console/
 실행.bat
+debug_post.json
