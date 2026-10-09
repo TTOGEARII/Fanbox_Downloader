@@ -86,6 +86,13 @@
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="작가명" Binding="{Binding CreatorName}" IsReadOnly="True" Width="130"/>
                             <DataGridTextColumn Header="creatorId (수정 가능)" Binding="{Binding CreatorId}" Width="150"/>
+                            <DataGridTextColumn Header="일러 기준(장)" Binding="{Binding IllustThreshold}" Width="90">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="ToolTip" Value="이미지가 이 장수 이하면 일러스트 경로(짤)로 저장. 빈칸=전역 기본, 0=분리 안 함"/>
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="상태" Binding="{Binding Status}" IsReadOnly="True" Width="85"/>
                             <DataGridTextColumn Header="받은 게시물" Binding="{Binding DownloadedCount}" IsReadOnly="True" Width="85"/>
                             <DataGridTextColumn Header="최근 결과" Binding="{Binding LastResult}" IsReadOnly="True" Width="*"/>

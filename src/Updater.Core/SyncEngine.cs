@@ -188,21 +188,24 @@ public class SyncEngine
 
         var items = content.Items.Where(i => _settings.FileTypes.Allows(i.Kind)).ToList();
 
-        // 만화 작가의 낱장 일러스트 게시물은 일러스트 루트로 분리 저장
+        // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
+        // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 (만화 작가에만 적용)
         var root = RootFor(m.Category);
-        if (_settings.SplitIllustrations && m.Category == "만화"
-            && !string.IsNullOrWhiteSpace(_settings.IllustRoot))
+        int threshold = _settings.CreatorIllustThresholds.TryGetValue(post.CreatorId, out var t)
+            ? t
+            : (_settings.SplitIllustrations && m.Category == "만화" ? _settings.IllustMaxImages : 0);
+        if (threshold > 0 && !string.IsNullOrWhiteSpace(_settings.IllustRoot))
         {
             bool hasHeavy = items.Any(i => i.Kind is FileKind.Archive or FileKind.Video);
             int imageCount = items.Count(i => i.Kind == FileKind.Image);
-            if (!hasHeavy && imageCount <= _settings.IllustMaxImages)
+            if (!hasHeavy && imageCount <= threshold)
                 root = _settings.IllustRoot;
         }
         var postDir = Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 
         Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" +
-            (root == _settings.IllustRoot && _settings.SplitIllustrations && m.Category == "만화" ? " (일러스트)" : ""));
+            (root == _settings.IllustRoot && root != RootFor(m.Category) ? " (일러스트)" : ""));
         if (_settings.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
             items.Add(new DownloadItem(content.CoverImageUrl!, "cover.jpg", FileKind.Image));
 

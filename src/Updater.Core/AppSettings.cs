@@ -13,8 +13,10 @@ public class AppSettings
     public string IllustRoot { get; set; } = "";
     /// <summary>만화 작가의 일러스트 게시물을 IllustRoot로 분리 저장</summary>
     public bool SplitIllustrations { get; set; } = false;
-    /// <summary>이미지가 이 장수 이하이고 영상/압축파일이 없으면 일러스트로 분류</summary>
+    /// <summary>이미지가 이 장수 이하이고 영상/압축파일이 없으면 일러스트로 분류 (전역 기본값)</summary>
     public int IllustMaxImages { get; set; } = 4;
+    /// <summary>작가별 일러스트 기준 장수 재정의. creatorId → 장수 (0 = 분리 안 함, 없으면 전역 설정)</summary>
+    public Dictionary<string, int> CreatorIllustThresholds { get; set; } = new();
     public int RequestDelayMs { get; set; } = 1000;
     public int MaxParallelDownloads { get; set; } = 3;
 

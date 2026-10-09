@@ -194,6 +194,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 Status = string.IsNullOrEmpty(mapped) ? "미확인" : "수동 매핑",
                 DownloadedCount = string.IsNullOrEmpty(mapped) ? 0 : _state.CountFor(mapped),
                 Enabled = string.IsNullOrEmpty(mapped) || !_settings.DisabledCreators.Contains(mapped),
+                IllustThreshold = mapped != null && _settings.CreatorIllustThresholds.TryGetValue(mapped, out var th)
+                    ? th.ToString() : "",
             };
             HookRow(row);
             _artists.Add(row);
@@ -271,7 +273,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void GridArtists_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
     {
-        // creatorId 칸 수동 입력 → 매핑 저장
+        // creatorId / 일러 기준 칸 수동 입력 → 설정 저장
         Dispatcher.BeginInvoke(() =>
         {
             if (e.Row.Item is not ArtistRow row) return;
@@ -281,8 +283,20 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             else
             {
                 _settings.Mapping[row.FolderName] = id;
-                row.Status = "수동 매핑";
+                if (row.Status is "미확인" or "매칭 안 됨") row.Status = "수동 매핑";
                 row.DownloadedCount = _state.CountFor(id);
+            }
+
+            // 일러 기준 장수 (빈칸=전역 기본, 0=분리 안 함)
+            if (!string.IsNullOrEmpty(id))
+            {
+                var raw = row.IllustThreshold.Trim();
+                if (string.IsNullOrEmpty(raw))
+                    _settings.CreatorIllustThresholds.Remove(id);
+                else if (int.TryParse(raw, out var th) && th >= 0)
+                    _settings.CreatorIllustThresholds[id] = Math.Min(th, 100);
+                else
+                    row.IllustThreshold = ""; // 잘못된 입력은 초기화
             }
             _settings.Save(App.SettingsPath);
         }, DispatcherPriority.Background);
@@ -337,6 +351,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 row.Status = _settings.Mapping.ContainsKey(m.FolderName) ? "수동 매핑" : "자동 매칭";
                 row.DownloadedCount = _state.CountFor(m.CreatorId);
                 row.Enabled = !_settings.DisabledCreators.Contains(m.CreatorId);
+                row.IllustThreshold = _settings.CreatorIllustThresholds.TryGetValue(m.CreatorId, out var th)
+                    ? th.ToString() : "";
             }
             else
             {

@@ -13,8 +13,11 @@ public class ArtistRow : INotifyPropertyChanged
     private int _downloadedCount;
     private string _lastResult = "";
     private string _category = "영상";
+    private string _illustThreshold = "";
 
     public string Category { get => _category; set => Set(ref _category, value); }
+    /// <summary>작가별 일러스트 기준 장수. 빈칸=전역 기본, 0=분리 안 함</summary>
+    public string IllustThreshold { get => _illustThreshold; set => Set(ref _illustThreshold, value); }
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string FolderName { get => _folderName; set => Set(ref _folderName, value); }
