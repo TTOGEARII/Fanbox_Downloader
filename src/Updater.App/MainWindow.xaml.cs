@@ -63,9 +63,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void SetupTray()
     {
+        System.Drawing.Icon trayIcon;
+        try
+        {
+            using var s = Application.GetResourceStream(new Uri("pack://application:,,,/app.ico"))!.Stream;
+            trayIcon = new System.Drawing.Icon(s);
+        }
+        catch { trayIcon = System.Drawing.SystemIcons.Application; }
+
         _tray = new System.Windows.Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = trayIcon,
             Visible = true,
             Text = "Fanbox Updater",
         };

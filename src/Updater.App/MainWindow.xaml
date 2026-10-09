@@ -7,6 +7,7 @@
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None"
         WindowCornerPreference="Round"
+        Icon="pack://application:,,,/app.ico"
         Background="{DynamicResource ApplicationBackgroundBrush}">
     <Grid>
         <Grid.RowDefinitions>
@@ -17,6 +18,9 @@
         </Grid.RowDefinitions>
 
         <ui:TitleBar Grid.Row="0" Title="Fanbox Updater">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/app.ico"/>
+            </ui:TitleBar.Icon>
             <ui:TitleBar.Header>
                 <TextBlock x:Name="TxtVersion" VerticalAlignment="Center" Margin="8,0"
                            Foreground="#808080" FontSize="12"/>
