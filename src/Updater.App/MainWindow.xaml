@@ -73,7 +73,12 @@
                               BorderThickness="0" RowHeight="34"
                               CellEditEnding="GridArtists_CellEditEnding">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="동기화" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="62"/>
+                            <DataGridCheckBoxColumn Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="92">
+                                <DataGridCheckBoxColumn.Header>
+                                    <CheckBox Content="동기화" IsChecked="True" Click="ChkAllSync_Click"
+                                              ToolTip="전체 선택/해제 (필터가 걸려 있으면 보이는 작가만)"/>
+                                </DataGridCheckBoxColumn.Header>
+                            </DataGridCheckBoxColumn>
                             <DataGridTextColumn Header="폴더명" Binding="{Binding FolderName}" IsReadOnly="True" Width="175"/>
                             <DataGridTemplateColumn Header="분류" Width="86">
                                 <DataGridTemplateColumn.CellTemplate>

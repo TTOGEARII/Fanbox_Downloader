@@ -257,6 +257,25 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    private void ChkAllSync_Click(object sender, RoutedEventArgs e)
+    {
+        var isChecked = ((System.Windows.Controls.CheckBox)sender).IsChecked == true;
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
+        _suppressRowEvents = true;
+        int count = 0;
+        foreach (var row in view.Cast<object>().OfType<ArtistRow>())
+        {
+            row.Enabled = isChecked;
+            count++;
+            if (string.IsNullOrEmpty(row.CreatorId)) continue;
+            if (isChecked) _settings.DisabledCreators.Remove(row.CreatorId);
+            else _settings.DisabledCreators.Add(row.CreatorId);
+        }
+        _suppressRowEvents = false;
+        _settings.Save(App.SettingsPath);
+        TxtStatusBar.Text = $"{count}개 작가 동기화 {(isChecked ? "전체 선택" : "전체 해제")}";
+    }
+
     private void CmbFilter_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (GridArtists == null) return;

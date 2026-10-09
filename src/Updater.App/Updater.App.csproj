@@ -10,7 +10,7 @@
     <AssemblyName>FanboxUpdater</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.0.10</Version>
+    <Version>1.0.11</Version>
     <StartupObject>Updater.App.Program</StartupObject>
   </PropertyGroup>
 
