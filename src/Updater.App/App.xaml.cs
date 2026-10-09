@@ -19,6 +19,23 @@ public partial class App : System.Windows.Application
         DataDir = FindDataDir();
         MigrateLegacyConfig();
 
+        if (e.Args.Length >= 2 && e.Args[0] == "--debug-post")
+        {
+            // 원시 post.info 응답을 debug_post.json으로 저장 (파싱 문제 진단용)
+            var settings = AppSettings.Load(SettingsPath);
+            var account = settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
+            if (account != null)
+            {
+                using var browser = new Updater.Providers.Fanbox.BrowserClient(account.SessionId, WebViewDataDir);
+                var res = await browser.FetchAsync(
+                    $"https://api.fanbox.cc/post.info?postId={e.Args[1]}", CancellationToken.None);
+                File.WriteAllText(Path.Combine(DataDir, "debug_post.json"),
+                    $"status: {res.Status}\n{res.Body}");
+            }
+            Shutdown(0);
+            return;
+        }
+
         if (e.Args.Contains("--sync"))
         {
             // 헤드리스 모드: 창 없이 1회 동기화 후 종료 (작업 스케줄러 연동용)

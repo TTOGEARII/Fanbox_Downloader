@@ -224,14 +224,36 @@ public class SyncEngine
         }).ToList();
         await Task.WhenAll(tasks);
 
-        if (_settings.SaveText && !string.IsNullOrWhiteSpace(content.Text))
+        // 외부 링크 처리: 링크 카드 해석 → 지원 호스트는 자동 다운로드
+        var externalNotes = new List<string>();
+        foreach (var link in content.ExternalLinks)
+        {
+            ct.ThrowIfCancellationRequested();
+            var resolved = await ExternalDownloader.ResolveAsync(link, ct);
+            bool downloaded = false;
+            if (_settings.DownloadExternalLinks)
+                downloaded = await ExternalDownloader.TryDownloadAsync(resolved, postDir,
+                    msg => Log?.Invoke(msg), ct);
+            externalNotes.Add(resolved + (downloaded ? "  [다운로드됨]" : "  [수동 다운로드 필요]"));
+            if (!downloaded)
+                Log?.Invoke($"  [외부 링크] 자동 다운로드 미지원 — post.txt에 저장: {resolved}");
+        }
+
+        if (_settings.SaveText &&
+            (!string.IsNullOrWhiteSpace(content.Text) || externalNotes.Count > 0))
         {
             var sb = new StringBuilder();
             sb.AppendLine(content.Title);
             sb.AppendLine(content.PublishedAt.ToString("yyyy-MM-dd HH:mm"));
             if (content.SourceUrl != null) sb.AppendLine(content.SourceUrl);
             sb.AppendLine();
-            sb.Append(content.Text);
+            if (!string.IsNullOrWhiteSpace(content.Text)) sb.AppendLine(content.Text);
+            if (externalNotes.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("── 외부 링크 ──");
+                foreach (var note in externalNotes) sb.AppendLine(note);
+            }
             await File.WriteAllTextAsync(Path.Combine(postDir, "post.txt"), sb.ToString(), ct);
         }
 

@@ -17,6 +17,9 @@ public class AppSettings
     public int IllustMaxImages { get; set; } = 4;
     /// <summary>작가별 일러스트 기준 장수 재정의. creatorId → 장수 (0 = 분리 안 함, 없으면 전역 설정)</summary>
     public Dictionary<string, int> CreatorIllustThresholds { get; set; } = new();
+
+    /// <summary>본문의 외부 링크(Dropbox/Google Drive/직접 링크)를 자동 다운로드</summary>
+    public bool DownloadExternalLinks { get; set; } = true;
     public int RequestDelayMs { get; set; } = 1000;
     public int MaxParallelDownloads { get; set; } = 3;
 

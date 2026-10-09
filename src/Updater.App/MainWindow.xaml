@@ -152,6 +152,9 @@
                             <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
                             <CheckBox x:Name="ChkAutoCreate" Margin="0,2,18,2">폴더 없는 팔로우 작가도 자동 생성</CheckBox>
                         </WrapPanel>
+                        <CheckBox x:Name="ChkExternal" Margin="0,2">외부 링크 자동 다운로드 (Dropbox · Google Drive · 직접 링크)</CheckBox>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="본문에 걸린 외부 배포 링크를 자동으로 받습니다. 미지원 호스트(MEGA 등)는 post.txt에 링크로 저장됩니다."/>
                         <CheckBox x:Name="ChkPaidOnly" Margin="0,2" FontWeight="SemiBold">플랜 구독 게시물만 받기 (무료 공개 글 제외)</CheckBox>
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="체크하면 후원 플랜에 가입해서 볼 수 있는 유료 게시물만 다운로드합니다."/>

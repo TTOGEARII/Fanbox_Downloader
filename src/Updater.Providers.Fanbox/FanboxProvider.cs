@@ -151,14 +151,15 @@ public class FanboxProvider : ISiteProvider
             texts.Add(s0);
 
         int index = 0;
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // image / file 타입 게시물
+        // image / file 타입 게시물 (같은 URL 중복 추가 방지)
         if (pb.TryGetProperty("images", out var images) && images.ValueKind == JsonValueKind.Array)
             foreach (var img in images.EnumerateArray())
-                AddImage(content, img, ++index);
+                AddImage(content, img, ++index, seenUrls);
         if (pb.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array)
             foreach (var f in files.EnumerateArray())
-                AddFile(content, f);
+                AddFile(content, f, seenUrls);
 
         // article 타입 게시물 (blocks + imageMap/fileMap)
         if (pb.TryGetProperty("blocks", out var blocks) && blocks.ValueKind == JsonValueKind.Array)
@@ -173,20 +174,44 @@ public class FanboxProvider : ISiteProvider
                     case "p" or "header":
                         if (block.TryGetProperty("text", out var btx) && btx.GetString() is { } bs)
                             texts.Add(bs);
+                        // 본문 텍스트에 걸린 하이퍼링크 수집 (외부 호스트 배포 대응)
+                        if (block.TryGetProperty("links", out var lks) && lks.ValueKind == JsonValueKind.Array)
+                            foreach (var lk in lks.EnumerateArray())
+                                if (lk.TryGetProperty("url", out var lu) && lu.GetString() is { Length: > 0 } lus
+                                    && !content.ExternalLinks.Contains(lus))
+                                    content.ExternalLinks.Add(lus);
                         break;
                     case "image":
                         if (block.TryGetProperty("imageId", out var iid) && iid.GetString() is { } iids
                             && imageMap.ValueKind == JsonValueKind.Object
                             && imageMap.TryGetProperty(iids, out var img2))
-                            AddImage(content, img2, ++index);
+                            AddImage(content, img2, ++index, seenUrls);
                         break;
                     case "file":
                         if (block.TryGetProperty("fileId", out var fid) && fid.GetString() is { } fids
                             && fileMap.ValueKind == JsonValueKind.Object
                             && fileMap.TryGetProperty(fids, out var f2))
-                            AddFile(content, f2);
+                            AddFile(content, f2, seenUrls);
                         break;
                 }
+            }
+        }
+
+        // urlEmbedMap: 링크 카드/임베드로 걸린 외부 URL 수집
+        if (pb.TryGetProperty("urlEmbedMap", out var uem) && uem.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var entry in uem.EnumerateObject())
+            {
+                string? url = null;
+                if (entry.Value.TryGetProperty("url", out var eu)) url = eu.GetString();
+                else if (entry.Value.TryGetProperty("html", out var eh) && eh.GetString() is { } html)
+                {
+                    // 링크 카드는 iframe src= 또는 a href= 로 들어 있음
+                    var mm = System.Text.RegularExpressions.Regex.Match(html, "(?:src|href)=\"(https?://[^\"]+)\"");
+                    if (mm.Success) url = System.Net.WebUtility.HtmlDecode(mm.Groups[1].Value);
+                }
+                if (!string.IsNullOrEmpty(url) && !content.ExternalLinks.Contains(url))
+                    content.ExternalLinks.Add(url);
             }
         }
 
@@ -194,18 +219,18 @@ public class FanboxProvider : ISiteProvider
         return content;
     }
 
-    private static void AddImage(PostContent content, JsonElement img, int index)
+    private static void AddImage(PostContent content, JsonElement img, int index, HashSet<string> seen)
     {
         var url = img.TryGetProperty("originalUrl", out var u) ? u.GetString() : null;
-        if (url == null) return;
+        if (url == null || !seen.Add(url)) return;
         var ext = img.TryGetProperty("extension", out var e) ? e.GetString() ?? "jpg" : "jpg";
         content.Items.Add(new DownloadItem(url, $"{index:D3}.{ext}", FileKind.Image));
     }
 
-    private static void AddFile(PostContent content, JsonElement f)
+    private static void AddFile(PostContent content, JsonElement f, HashSet<string> seen)
     {
         var url = f.TryGetProperty("url", out var u) ? u.GetString() : null;
-        if (url == null) return;
+        if (url == null || !seen.Add(url)) return;
         var name = f.TryGetProperty("name", out var n) ? n.GetString() ?? "file" : "file";
         var ext = (f.TryGetProperty("extension", out var e) ? e.GetString() ?? "" : "").ToLowerInvariant();
         var kind = ext switch

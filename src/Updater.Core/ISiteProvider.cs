@@ -43,4 +43,6 @@ public class PostContent
     public string? SourceUrl { get; set; }
     public string? CoverImageUrl { get; set; }
     public List<DownloadItem> Items { get; set; } = new();
+    /// <summary>본문에 걸린 외부 링크 (외부 호스트 배포 게시물 대응)</summary>
+    public List<string> ExternalLinks { get; set; } = new();
 }
