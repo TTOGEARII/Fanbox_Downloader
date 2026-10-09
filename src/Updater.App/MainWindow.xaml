@@ -1,0 +1,188 @@
+<ui:FluentWindow x:Class="Updater.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Fanbox Updater" Height="680" Width="1020"
+        WindowStartupLocation="CenterScreen"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="None"
+        WindowCornerPreference="Round"
+        Background="{DynamicResource ApplicationBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Fanbox Updater">
+            <ui:TitleBar.Header>
+                <TextBlock x:Name="TxtVersion" VerticalAlignment="Center" Margin="8,0"
+                           Foreground="#808080" FontSize="12"/>
+            </ui:TitleBar.Header>
+        </ui:TitleBar>
+
+        <!-- 상단 커맨드 바 -->
+        <Border Grid.Row="1" Padding="16,10" BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <ui:Button x:Name="BtnSync" Click="BtnSync_Click" Appearance="Primary"
+                               Content="▶  지금 최신화" FontWeight="SemiBold" Padding="18,8"/>
+                    <ui:Button x:Name="BtnStop" Click="BtnStop_Click" IsEnabled="False"
+                               Content="■  중지" Margin="8,0,0,0" Padding="14,8"/>
+                    <ui:Button x:Name="BtnRefresh" Click="BtnRefresh_Click"
+                               Content="작가 목록 새로고침" Margin="8,0,0,0" Padding="14,8"/>
+                    <ui:Button x:Name="BtnUpdate" Click="BtnUpdate_Click" Appearance="Caution"
+                               Content="업데이트" Margin="8,0,0,0" Padding="14,8" Visibility="Collapsed"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtNextRun" Foreground="#808080" FontSize="12" TextAlignment="Right"/>
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" Margin="20,0">
+                    <TextBlock x:Name="TxtStatus" Text="대기 중" FontWeight="SemiBold"/>
+                    <ProgressBar x:Name="Progress" Height="6" Margin="0,5,0,0" Minimum="0" Maximum="100"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TabControl Grid.Row="2" Margin="12,8,12,4">
+            <!-- 작가 탭 -->
+            <TabItem Header="작가">
+                <DockPanel Margin="4">
+                    <DockPanel DockPanel.Dock="Top" Margin="4,6,4,8">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#9A9A9A">분류 필터</TextBlock>
+                            <ComboBox x:Name="CmbFilter" Width="120" SelectionChanged="CmbFilter_SelectionChanged">
+                                <ComboBoxItem IsSelected="True">전체</ComboBoxItem>
+                                <ComboBoxItem>영상</ComboBoxItem>
+                                <ComboBoxItem>만화</ComboBoxItem>
+                                <ComboBoxItem>매칭 안 됨</ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Foreground="#9A9A9A" TextWrapping="Wrap" FontSize="12" Margin="0,0,16,0"
+                                   Text="매칭 안 된 폴더는 creatorId 칸에 작가 주소(https://xxxx.fanbox.cc의 xxxx)를 입력하세요. 분류를 바꾸면 저장 위치(영상/만화 루트)가 바뀝니다."/>
+                    </DockPanel>
+                    <DataGrid x:Name="GridArtists" AutoGenerateColumns="False" CanUserAddRows="False"
+                              CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
+                              BorderThickness="0" RowHeight="34"
+                              CellEditEnding="GridArtists_CellEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="동기화" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="62"/>
+                            <DataGridTextColumn Header="폴더명" Binding="{Binding FolderName}" IsReadOnly="True" Width="175"/>
+                            <DataGridTemplateColumn Header="분류" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox SelectedItem="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
+                                                  ItemsSource="{Binding Categories, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  Padding="8,2" FontSize="12"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="작가명" Binding="{Binding CreatorName}" IsReadOnly="True" Width="130"/>
+                            <DataGridTextColumn Header="creatorId (수정 가능)" Binding="{Binding CreatorId}" Width="150"/>
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" IsReadOnly="True" Width="85"/>
+                            <DataGridTextColumn Header="받은 게시물" Binding="{Binding DownloadedCount}" IsReadOnly="True" Width="85"/>
+                            <DataGridTextColumn Header="최근 결과" Binding="{Binding LastResult}" IsReadOnly="True" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- 설정 탭 -->
+            <TabItem Header="설정">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20,8" MaxWidth="720" HorizontalAlignment="Left">
+
+                        <TextBlock Style="{StaticResource SectionTitle}">계정</TextBlock>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="175"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource FieldLabel}">FANBOXSESSID 쿠키</TextBlock>
+                            <TextBox x:Name="TxtSession" Grid.Column="1"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="브라우저 로그인 → F12 → Application → Cookies → fanbox.cc → FANBOXSESSID 값 복사"/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}">저장</TextBlock>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="175"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Style="{StaticResource FieldLabel}">영상 작가 저장 경로</TextBlock>
+                            <TextBox x:Name="TxtNasRoot" Grid.Column="1" Margin="0,3"/>
+                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">만화 작가 저장 경로</TextBlock>
+                            <TextBox x:Name="TxtMangaRoot" Grid.Row="1" Grid.Column="1" Margin="0,3"
+                                     ToolTip="비우면 영상 경로에 함께 저장됩니다"/>
+                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                            <TextBox x:Name="TxtTemplate" Grid.Row="2" Grid.Column="1" Margin="0,3"
+                                     ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
+                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                            <TextBox x:Name="TxtDateFormat" Grid.Row="3" Grid.Column="1" Margin="0,3"/>
+                            <TextBlock Grid.Row="4" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                            <TextBox x:Name="TxtParallel" Grid.Row="4" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
+                        </Grid>
+                        <WrapPanel Margin="0,8,0,0">
+                            <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
+                            <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
+                            <CheckBox x:Name="ChkAutoCreate" Margin="0,2,18,2">폴더 없는 팔로우 작가도 자동 생성</CheckBox>
+                        </WrapPanel>
+                        <CheckBox x:Name="ChkPaidOnly" Margin="0,2" FontWeight="SemiBold">플랜 구독 게시물만 받기 (무료 공개 글 제외)</CheckBox>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="체크하면 후원 플랜에 가입해서 볼 수 있는 유료 게시물만 다운로드합니다."/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}">받을 파일 종류</TextBlock>
+                        <WrapPanel>
+                            <CheckBox x:Name="ChkImages" Margin="0,2,18,2">이미지</CheckBox>
+                            <CheckBox x:Name="ChkVideos" Margin="0,2,18,2">영상</CheckBox>
+                            <CheckBox x:Name="ChkArchives" Margin="0,2,18,2">압축파일</CheckBox>
+                            <CheckBox x:Name="ChkOthers" Margin="0,2,18,2">기타</CheckBox>
+                        </WrapPanel>
+
+                        <TextBlock Style="{StaticResource SectionTitle}">자동 실행 스케줄</TextBlock>
+                        <CheckBox x:Name="ChkSchedule" Margin="0,0,0,6">자동 최신화 사용 (프로그램이 트레이에 있을 때 동작)</CheckBox>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                            <RadioButton x:Name="RadDaily" GroupName="sched" VerticalAlignment="Center">매일</RadioButton>
+                            <TextBox x:Name="TxtDailyTime" Width="70" Margin="8,0" ToolTip="HH:mm"/>
+                            <TextBlock VerticalAlignment="Center" Margin="0,0,28,0">시에 실행</TextBlock>
+                            <RadioButton x:Name="RadInterval" GroupName="sched" VerticalAlignment="Center">매</RadioButton>
+                            <TextBox x:Name="TxtIntervalHours" Width="50" Margin="8,0"/>
+                            <TextBlock VerticalAlignment="Center">시간마다 실행</TextBlock>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="창을 닫아도 트레이에서 계속 실행됩니다. 완전히 종료하려면 트레이 아이콘 우클릭 → 종료."/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}">동작</TextBlock>
+                        <WrapPanel Margin="0,0,0,18">
+                            <CheckBox x:Name="ChkStartMin" Margin="0,2,18,2">시작 시 트레이로 최소화</CheckBox>
+                            <CheckBox x:Name="ChkCloseTray" Margin="0,2,18,2">닫기 버튼 → 트레이로 이동</CheckBox>
+                        </WrapPanel>
+
+                        <ui:Button x:Name="BtnSaveSettings" Click="BtnSaveSettings_Click" Appearance="Primary"
+                                   Content="설정 저장" FontWeight="SemiBold" Padding="28,9" Margin="0,0,0,24"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 로그 탭 -->
+            <TabItem Header="로그">
+                <TextBox x:Name="TxtLog" IsReadOnly="True" VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap" BorderThickness="0"
+                         HorizontalScrollBarVisibility="Auto" Margin="4"/>
+            </TabItem>
+        </TabControl>
+
+        <!-- 하단 상태 바 -->
+        <Border Grid.Row="3" Padding="16,6" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+            <TextBlock x:Name="TxtStatusBar" Foreground="#9A9A9A" FontSize="12"/>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

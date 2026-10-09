@@ -1,0 +1,20 @@
+# 빌드 산출물
+bin/
+obj/
+publish/
+Releases/
+*.user
+
+# 개인 데이터 — 세션 쿠키 포함, 절대 커밋 금지
+settings.json
+config.json
+state.json
+mapping.json
+app.log
+run.log
+run.err.log
+.webview2/
+
+# 구버전 콘솔 (로컬 보관용)
+legacy-console/
+실행.bat
