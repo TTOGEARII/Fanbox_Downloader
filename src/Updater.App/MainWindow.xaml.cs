@@ -387,7 +387,54 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void BtnSync_Click(object sender, RoutedEventArgs e) => StartSync();
 
-    private async void StartSync()
+    private void BtnRedownload_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncRunning) return;
+        if (GridArtists.SelectedItem is not ArtistRow row || string.IsNullOrEmpty(row.CreatorId))
+        {
+            MessageBox.Show("작가 탭에서 다시 받을 작가를 먼저 선택하세요.", "Fanbox Updater");
+            return;
+        }
+
+        // 날짜 선택 다이얼로그
+        var picker = new System.Windows.Controls.DatePicker
+        {
+            SelectedDate = DateTime.Today.AddMonths(-3),
+            Margin = new Thickness(0, 10, 0, 16),
+        };
+        var ok = new System.Windows.Controls.Button { Content = "다시 받기", Padding = new Thickness(18, 6, 18, 6), IsDefault = true };
+        var cancel = new System.Windows.Controls.Button { Content = "취소", Padding = new Thickness(18, 6, 18, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(ok); buttons.Children.Add(cancel);
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = $"'{row.FolderName}' ({row.CreatorId}) 작가의\n이 날짜 이후 게시물을 받은 기록과 무관하게 다시 받습니다.\n이미 있는 파일은 건너뜁니다.",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(picker);
+        panel.Children.Add(buttons);
+        var dlg = new Window
+        {
+            Title = "다시 받기",
+            Content = panel,
+            Width = 380,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = System.Windows.Media.Brushes.Transparent,
+        };
+        ok.Click += (_, _) => { dlg.DialogResult = true; dlg.Close(); };
+        if (dlg.ShowDialog() != true || picker.SelectedDate == null) return;
+
+        StartSync(
+            new Dictionary<string, DateTime> { [row.CreatorId] = picker.SelectedDate.Value },
+            new HashSet<string> { row.CreatorId });
+    }
+
+    private async void StartSync(Dictionary<string, DateTime>? reDownloadSince = null,
+        HashSet<string>? onlyCreators = null)
     {
         if (_syncRunning) return;
         var account = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox" && a.Enabled);
@@ -428,7 +475,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
             TxtStatus.Text = "브라우저 엔진 초기화 중...";
             await provider.InitializeAsync(_syncCts.Token);
-            var summary = await engine.RunAsync(provider, _syncCts.Token);
+            var summary = await engine.RunAsync(provider, _syncCts.Token, reDownloadSince, onlyCreators);
 
             Progress.Value = 100;
             TxtStatus.Text = summary.Cancelled

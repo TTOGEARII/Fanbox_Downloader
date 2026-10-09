@@ -38,6 +38,9 @@
                                Content="■  중지" Margin="8,0,0,0" Padding="14,8"/>
                     <ui:Button x:Name="BtnRefresh" Click="BtnRefresh_Click"
                                Content="작가 목록 새로고침" Margin="8,0,0,0" Padding="14,8"/>
+                    <ui:Button x:Name="BtnRedownload" Click="BtnRedownload_Click"
+                               Content="선택 작가 다시 받기" Margin="8,0,0,0" Padding="14,8"
+                               ToolTip="작가 탭에서 작가를 선택한 뒤, 지정 날짜 이후 게시물을 받은 기록과 무관하게 다시 받습니다"/>
                     <ui:Button x:Name="BtnUpdate" Click="BtnUpdate_Click" Appearance="Caution"
                                Content="업데이트" Margin="8,0,0,0" Padding="14,8" Visibility="Collapsed"/>
                 </StackPanel>

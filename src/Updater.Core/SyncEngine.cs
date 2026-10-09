@@ -96,7 +96,11 @@ public class SyncEngine
         return result;
     }
 
-    public async Task<SyncSummary> RunAsync(ISiteProvider provider, CancellationToken ct)
+    /// <param name="reDownloadSince">creatorId → 날짜: 이 날짜 이후 게시물은 받은 기록이 있어도 다시 받음</param>
+    /// <param name="onlyCreators">지정하면 해당 creatorId만 동기화</param>
+    public async Task<SyncSummary> RunAsync(ISiteProvider provider, CancellationToken ct,
+        IReadOnlyDictionary<string, DateTime>? reDownloadSince = null,
+        HashSet<string>? onlyCreators = null)
     {
         var summary = new SyncSummary();
         Log?.Invoke($"[{provider.Name}] 작가 목록을 가져오는 중...");
@@ -111,6 +115,7 @@ public class SyncEngine
 
         var targets = matches
             .Where(m => m.CreatorId != null && !_settings.DisabledCreators.Contains(m.CreatorId!))
+            .Where(m => onlyCreators == null || onlyCreators.Contains(m.CreatorId!))
             .ToList();
         Log?.Invoke($"대상 작가 {targets.Count}명 최신화 시작");
 
@@ -128,7 +133,11 @@ public class SyncEngine
                 foreach (var post in posts)
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (_state.Contains(m.CreatorId!, post.PostId)) continue;
+                    // "다시 받기" 지정 범위면 받은 기록을 무시 (이미 있는 파일은 파일 단위로 건너뜀)
+                    bool force = reDownloadSince != null
+                        && reDownloadSince.TryGetValue(m.CreatorId!, out var since)
+                        && post.PublishedAt >= since;
+                    if (!force && _state.Contains(m.CreatorId!, post.PostId)) continue;
                     if (!post.IsAccessible) { summary.LockedSkipped++; continue; }
                     // 플랜 구독 게시물만 받기: 무료 공개 글(feeRequired=0)은 제외
                     if (_settings.PaidPostsOnly && post.FeeRequired <= 0) continue;
