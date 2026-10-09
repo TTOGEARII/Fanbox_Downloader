@@ -9,6 +9,12 @@ public class AppSettings
     public string NasRoot { get; set; } = "";
     /// <summary>만화 작가 저장 루트 (비우면 영상 루트 사용)</summary>
     public string MangaRoot { get; set; } = "";
+    /// <summary>일러스트 분리 저장 루트 (만화 작가의 낱장 일러스트 게시물용)</summary>
+    public string IllustRoot { get; set; } = "";
+    /// <summary>만화 작가의 일러스트 게시물을 IllustRoot로 분리 저장</summary>
+    public bool SplitIllustrations { get; set; } = false;
+    /// <summary>이미지가 이 장수 이하이고 영상/압축파일이 없으면 일러스트로 분류</summary>
+    public int IllustMaxImages { get; set; } = 4;
     public int RequestDelayMs { get; set; } = 1000;
     public int MaxParallelDownloads { get; set; } = 3;
 

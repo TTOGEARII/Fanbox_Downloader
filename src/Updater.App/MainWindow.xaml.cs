@@ -108,6 +108,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TxtSession.Text = fanbox?.SessionId ?? "";
         TxtNasRoot.Text = _settings.NasRoot;
         TxtMangaRoot.Text = _settings.MangaRoot;
+        TxtIllustRoot.Text = _settings.IllustRoot;
+        ChkSplitIllust.IsChecked = _settings.SplitIllustrations;
+        TxtIllustMax.Text = _settings.IllustMaxImages.ToString();
         TxtTemplate.Text = _settings.FolderNameTemplate;
         TxtDateFormat.Text = _settings.DateFormat;
         TxtParallel.Text = _settings.MaxParallelDownloads.ToString();
@@ -139,6 +142,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         fanbox.SessionId = TxtSession.Text.Trim();
         _settings.NasRoot = TxtNasRoot.Text.Trim();
         _settings.MangaRoot = TxtMangaRoot.Text.Trim();
+        _settings.IllustRoot = TxtIllustRoot.Text.Trim();
+        _settings.SplitIllustrations = ChkSplitIllust.IsChecked == true;
+        _settings.IllustMaxImages = int.TryParse(TxtIllustMax.Text, out var im) ? Math.Clamp(im, 1, 50) : 4;
         _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
         _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
         _settings.MaxParallelDownloads = int.TryParse(TxtParallel.Text, out var p) ? Math.Clamp(p, 1, 8) : 3;

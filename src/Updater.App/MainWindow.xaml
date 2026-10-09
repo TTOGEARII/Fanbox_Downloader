@@ -118,21 +118,29 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                             </Grid.RowDefinitions>
                             <TextBlock Style="{StaticResource FieldLabel}">영상 작가 저장 경로</TextBlock>
                             <TextBox x:Name="TxtNasRoot" Grid.Column="1" Margin="0,3"/>
                             <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">만화 작가 저장 경로</TextBlock>
                             <TextBox x:Name="TxtMangaRoot" Grid.Row="1" Grid.Column="1" Margin="0,3"
                                      ToolTip="비우면 영상 경로에 함께 저장됩니다"/>
-                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
-                            <TextBox x:Name="TxtTemplate" Grid.Row="2" Grid.Column="1" Margin="0,3"
+                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">일러스트 저장 경로</TextBlock>
+                            <TextBox x:Name="TxtIllustRoot" Grid.Row="2" Grid.Column="1" Margin="0,3"
+                                     ToolTip="만화 작가의 낱장 일러스트 게시물을 분리 저장할 경로"/>
+                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                            <TextBox x:Name="TxtTemplate" Grid.Row="3" Grid.Column="1" Margin="0,3"
                                      ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
-                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
-                            <TextBox x:Name="TxtDateFormat" Grid.Row="3" Grid.Column="1" Margin="0,3"/>
-                            <TextBlock Grid.Row="4" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
-                            <TextBox x:Name="TxtParallel" Grid.Row="4" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
+                            <TextBlock Grid.Row="4" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                            <TextBox x:Name="TxtDateFormat" Grid.Row="4" Grid.Column="1" Margin="0,3"/>
+                            <TextBlock Grid.Row="5" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                            <TextBox x:Name="TxtParallel" Grid.Row="5" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
                         </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <CheckBox x:Name="ChkSplitIllust" VerticalAlignment="Center">만화 작가의 일러스트 게시물 분리 저장 — 이미지</CheckBox>
+                            <TextBox x:Name="TxtIllustMax" Width="44" Margin="6,0" VerticalAlignment="Center"/>
+                            <TextBlock VerticalAlignment="Center">장 이하 + 영상·압축 없음이면 일러스트로 분류</TextBlock>
+                        </StackPanel>
                         <WrapPanel Margin="0,8,0,0">
                             <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                             <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
