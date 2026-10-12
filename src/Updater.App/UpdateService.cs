@@ -33,8 +33,96 @@ public class UpdateService
         await _manager.DownloadUpdatesAsync(info, progress);
         await PrewarmAntivirusScanAsync(info);
         beforeRestart?.Invoke();
-        StartRestartWatchdog(info.TargetFullRelease.Version.ToString());
-        _manager.ApplyUpdatesAndRestart(info);
+        var version = info.TargetFullRelease.Version.ToString();
+        StartRestartWatchdog(version);
+        StartApplySplash(version);
+        // Velopack 기본 적용 다이얼로그는 이미지 커스텀이 불가능해(--splashImage는 Setup.exe 전용)
+        // silent로 적용하고, 그동안 위에서 띄운 자체 스플래시 창을 보여준다.
+        _manager.WaitExitThenApplyUpdates(info.TargetFullRelease, silent: true, restart: true);
+        Environment.Exit(0);
+    }
+
+    /// <summary>--demo-splash 실행 인자용: 적용 스플래시를 10초간 미리 본다.</summary>
+    public static void ShowApplySplashDemo() => StartApplySplash("0.0.0-demo", timeoutSeconds: 10);
+
+    /// <summary>업데이트 적용 동안 보여줄 자체 스플래시 창(PowerShell WPF)을 임시 폴더에서 띄운다.
+    /// 앱 폴더(current)가 통째로 교체되므로 이미지·스크립트를 임시 폴더로 복사해 실행해야 한다.
+    /// 새 버전이 적용되고 앱이 다시 뜨면 닫히고, timeoutSeconds가 지나면 스스로 닫힌다.</summary>
+    private static void StartApplySplash(string targetVersion, int timeoutSeconds = 180)
+    {
+        try
+        {
+            var src = Path.Combine(AppContext.BaseDirectory, "assets", "splash.png");
+            if (!File.Exists(src)) return;
+            var tmp = Path.Combine(Path.GetTempPath(), "FanboxUpdater-splash");
+            Directory.CreateDirectory(tmp);
+            var img = Path.Combine(tmp, "splash.png");
+            File.Copy(src, img, overwrite: true);
+
+            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+            var sqVersion = Path.Combine(root, "current", "sq.version");
+            var script = Path.Combine(tmp, "splash.ps1");
+            File.WriteAllText(script, $$"""
+                Add-Type -AssemblyName PresentationFramework
+                $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bmp.BeginInit()
+                $bmp.UriSource = New-Object System.Uri('{{img}}')
+                $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                $bmp.EndInit()
+
+                $image = New-Object System.Windows.Controls.Image
+                $image.Source = $bmp
+                $image.Width = 480; $image.Height = 300
+
+                $bar = New-Object System.Windows.Controls.ProgressBar
+                $bar.IsIndeterminate = $true
+                $bar.Height = 10
+                $bar.BorderThickness = 0
+                $bar.Foreground = [System.Windows.Media.SolidColorBrush]([System.Windows.Media.ColorConverter]::ConvertFromString('#FF77A8'))
+                $bar.Background = [System.Windows.Media.SolidColorBrush]([System.Windows.Media.ColorConverter]::ConvertFromString('#1C1B22'))
+
+                $panel = New-Object System.Windows.Controls.StackPanel
+                [void]$panel.Children.Add($image)
+                [void]$panel.Children.Add($bar)
+
+                $w = New-Object System.Windows.Window
+                $w.WindowStyle = 'None'
+                $w.ResizeMode = 'NoResize'
+                $w.AllowsTransparency = $true
+                $w.Background = [System.Windows.Media.Brushes]::Transparent
+                $w.Topmost = $true
+                $w.ShowInTaskbar = $false
+                $w.WindowStartupLocation = 'CenterScreen'
+                $w.SizeToContent = 'WidthAndHeight'
+                $w.Content = $panel
+
+                $sq = '{{sqVersion}}'
+                $deadline = (Get-Date).AddSeconds({{timeoutSeconds}})
+                $timer = New-Object System.Windows.Threading.DispatcherTimer
+                $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+                $timer.Add_Tick({
+                    $applied = $false
+                    try { $applied = (Test-Path $sq) -and (Select-String -Path $sq -Pattern '<version>{{targetVersion}}' -SimpleMatch -Quiet) } catch {}
+                    $running = [bool](Get-Process FanboxUpdater -ErrorAction SilentlyContinue)
+                    if (($applied -and $running) -or ((Get-Date) -gt $deadline)) { $timer.Stop(); $w.Close() }
+                })
+                $timer.Start()
+                [void]$w.ShowDialog()
+                """,
+                // PowerShell 5.1은 BOM 없는 UTF-8 스크립트를 ANSI로 읽어 비ASCII 경로가 깨진다
+                new System.Text.UTF8Encoding(true));
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File \"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                // 감시자와 마찬가지로 current 폴더를 잠그지 않도록 작업 폴더를 밖으로 뺀다
+                WorkingDirectory = tmp,
+            });
+        }
+        catch { /* 스플래시 실패는 치명적이지 않음 — silent 적용은 그대로 진행된다 */ }
     }
 
     /// <summary>백신(V3 Lite 등)이 업데이트로 교체된 "처음 보는" 실행 파일의 실행을

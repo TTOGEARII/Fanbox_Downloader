@@ -59,9 +59,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TxtVersion.Text = $"v{_updater.CurrentVersion}";
         _ = CheckForUpdatesAsync();
 
+        // 작가명 캐시가 비어 있으면(캐시 유실 등) 시작할 때 한 번 자동 새로고침해 복구한다
+        if (_settings.CreatorNames.Count == 0 &&
+            _settings.Accounts.Any(a => a.Provider == "fanbox" && a.Enabled && !string.IsNullOrWhiteSpace(a.SessionId)))
+            Loaded += (_, _) => BtnRefresh_Click(this, new RoutedEventArgs());
+
         // UI 확인용: --demo-overlay 로 실행하면 업데이트 오버레이를 63%로 표시
         if (Environment.GetCommandLineArgs().Contains("--demo-overlay"))
             ShowUpdateOverlay(63);
+        // UI 확인용: --demo-splash 로 실행하면 업데이트 적용 스플래시 창을 10초간 표시
+        if (Environment.GetCommandLineArgs().Contains("--demo-splash"))
+            UpdateService.ShowApplySplashDemo();
 
         Closing += (s, e) =>
         {
