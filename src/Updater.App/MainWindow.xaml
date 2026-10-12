@@ -309,6 +309,14 @@
 
                         <ui:Button x:Name="BtnSaveSettings" Click="BtnSaveSettings_Click" Appearance="Primary"
                                    Content="설정 저장" FontWeight="SemiBold" Padding="28,9" Margin="0,0,0,24"/>
+
+                        <TextBlock Style="{StaticResource SectionTitle}">제거</TextBlock>
+                        <WrapPanel Margin="0,0,0,24">
+                            <ui:Button x:Name="BtnUninstall" Click="BtnUninstall_Click" Content="프로그램 제거" Padding="14,6"
+                                       ToolTip="Fanbox Updater를 PC에서 제거합니다. 받아둔 파일은 지우지 않습니다."/>
+                            <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                       Text="받아둔 파일과 저장 폴더는 지우지 않습니다."/>
+                        </WrapPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

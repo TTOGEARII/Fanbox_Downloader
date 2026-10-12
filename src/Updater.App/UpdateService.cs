@@ -45,6 +45,20 @@ public class UpdateService
     /// <summary>--demo-splash 실행 인자용: 적용 스플래시를 10초간 미리 본다.</summary>
     public static void ShowApplySplashDemo() => StartApplySplash("0.0.0-demo", timeoutSeconds: 10);
 
+    /// <summary>Velopack 언인스톨러(Update.exe --uninstall)를 실행한다. 설치형에서만 유효.</summary>
+    public static void LaunchUninstaller()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(root, "Update.exe"),
+            Arguments = "--uninstall",
+            UseShellExecute = false,
+            // current 폴더를 잠그지 않도록 작업 폴더를 밖으로 뺀다
+            WorkingDirectory = Path.GetTempPath(),
+        });
+    }
+
     /// <summary>업데이트 적용 동안 보여줄 자체 스플래시 창(PowerShell WinForms, 움직이는 GIF)을 임시 폴더에서 띄운다.
     /// 앱 폴더(current)가 통째로 교체되므로 이미지·스크립트를 임시 폴더로 복사해 실행해야 한다.
     /// 새 버전이 적용되고 앱이 다시 뜨면 닫히고, timeoutSeconds가 지나면 스스로 닫힌다.</summary>

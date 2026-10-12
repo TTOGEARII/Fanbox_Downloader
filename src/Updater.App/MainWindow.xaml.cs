@@ -22,6 +22,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _syncRunning;
     private bool _suppressRowEvents;
     private bool _uiReady;
+    private bool _uninstalling;
     private readonly DispatcherTimer _applyDebounce;
 
     /// <summary>작가 그리드의 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화)</summary>
@@ -82,8 +83,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Closing += (s, e) =>
         {
             // 포커스를 잃지 않은 텍스트박스 등 마지막 편집이 유실되지 않게 닫기 전에 반영
+            // (제거 중에는 저장하면 방금 지운 설정 폴더가 되살아나므로 건너뛴다)
             _applyDebounce.Stop();
-            ApplySettings(interactive: false);
+            if (!_uninstalling) ApplySettings(interactive: false);
             if (!_reallyExit && _settings.CloseToTray)
             {
                 e.Cancel = true;
@@ -360,6 +362,43 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (picked == null) return;
         row.Path = picked;
         if (string.IsNullOrWhiteSpace(row.Name)) row.Name = Path.GetFileName(picked.TrimEnd('\\'));
+    }
+
+    private void BtnUninstall_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_updater.IsInstalled)
+        {
+            MessageBox.Show("개발 실행에서는 제거할 수 없습니다. Setup.exe로 설치된 경우에만 동작합니다.", "Fanbox Updater");
+            return;
+        }
+        if (MessageBox.Show(
+                "Fanbox Updater를 제거할까요?\n\n받아둔 파일과 저장 폴더는 지우지 않습니다.",
+                "프로그램 제거", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        var wipeData = MessageBox.Show(
+            $"설정과 받은 기록도 함께 삭제할까요?\n({App.DataDir})\n\n[예] 흔적 없이 삭제 — 재설치하면 처음부터 다시 설정하고, 게시물도 전부 다시 받습니다.\n[아니요] 남겨두기 — 재설치하면 그대로 이어서 씁니다.",
+            "설정·기록 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+
+        try
+        {
+            UpdateService.LaunchUninstaller();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"제거 실행에 실패했습니다: {ex.Message}\n\nWindows 설정 → 앱 → 설치된 앱에서 제거해주세요.", "Fanbox Updater");
+            return;
+        }
+
+        _uninstalling = true; // 종료 시 자동 저장이 설정 폴더를 되살리지 않게
+        if (wipeData)
+        {
+            try { Directory.Delete(App.DataDir, recursive: true); }
+            catch { /* 열려 있는 로그 등은 무시 — 언인스톨러가 지울 수 있는 건 지운다 */ }
+        }
+        _reallyExit = true;
+        _tray?.Dispose();
+        Application.Current.Shutdown();
     }
 
     private void BtnBrowseIllust_Click(object sender, RoutedEventArgs e)
