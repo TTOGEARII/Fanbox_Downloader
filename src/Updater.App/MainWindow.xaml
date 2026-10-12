@@ -319,5 +319,26 @@
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
             <TextBlock x:Name="TxtStatusBar" Foreground="#9A9A9A" FontSize="12"/>
         </Border>
+
+        <!-- 업데이트 진행 오버레이 -->
+        <Grid x:Name="UpdateOverlay" Grid.Row="1" Grid.RowSpan="3" Visibility="Collapsed"
+              Background="#D00E0E12" Panel.ZIndex="99">
+            <Border MaxWidth="400" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="14" Background="#FF1C1B22" BorderBrush="#FF77A8" BorderThickness="1.5"
+                    Padding="36,30">
+                <StackPanel>
+                    <TextBlock x:Name="TxtUpdateFace" Text="(´｡• ᵕ •｡`)" FontSize="38"
+                               HorizontalAlignment="Center" Foreground="#FFB7D5"/>
+                    <TextBlock x:Name="TxtUpdateMsg" Text="새 버전을 데려오는 중이에요..." FontSize="14"
+                               HorizontalAlignment="Center" Margin="0,14,0,2" Foreground="#E6E6EB"/>
+                    <TextBlock x:Name="TxtUpdatePct" Text="0%" FontSize="30" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="#FF9ECF"/>
+                    <ProgressBar x:Name="UpdateProgress" Height="10" Margin="0,14,0,0"
+                                 Minimum="0" Maximum="100" Foreground="#FF77A8"/>
+                    <TextBlock Text="☆ 잠시만 기다려 주세요 ☆" FontSize="11" HorizontalAlignment="Center"
+                               Margin="0,12,0,0" Foreground="#8A8A95"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

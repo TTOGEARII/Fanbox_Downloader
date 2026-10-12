@@ -36,6 +36,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         GridArtists.ItemsSource = _artists;
         GridCategories.ItemsSource = _categoryRows;
 
+        // 기본 정렬: 매핑된 작가 우선, 그 다음 폴더명순 (매핑이 바뀌면 실시간 재정렬)
+        var artistView = (System.Windows.Data.ListCollectionView)
+            System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
+        artistView.SortDescriptions.Add(new System.ComponentModel.SortDescription(
+            nameof(ArtistRow.IsMapped), System.ComponentModel.ListSortDirection.Descending));
+        artistView.SortDescriptions.Add(new System.ComponentModel.SortDescription(
+            nameof(ArtistRow.FolderName), System.ComponentModel.ListSortDirection.Ascending));
+        artistView.IsLiveSorting = true;
+        artistView.LiveSortingProperties.Add(nameof(ArtistRow.IsMapped));
+
         LoadSettingsToUi();
         RefreshCategoryUi();
         SetupTray();
@@ -48,6 +58,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         TxtVersion.Text = $"v{_updater.CurrentVersion}";
         _ = CheckForUpdatesAsync();
+
+        // UI 확인용: --demo-overlay 로 실행하면 업데이트 오버레이를 63%로 표시
+        if (Environment.GetCommandLineArgs().Contains("--demo-overlay"))
+            ShowUpdateOverlay(63);
 
         Closing += (s, e) =>
         {
@@ -884,21 +898,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
         BtnUpdate.IsEnabled = false;
-        BtnUpdate.Content = "다운로드 중... 0%";
         Progress.Value = 0;
         TxtStatus.Text = "업데이트 다운로드 중...";
+        ShowUpdateOverlay(0);
         try
         {
             _reallyExit = true;
             await _updater.DownloadAndApplyAsync(_pendingUpdate, p => Dispatcher.BeginInvoke(() =>
             {
-                BtnUpdate.Content = $"다운로드 중... {p}%";
                 Progress.Value = p;
-                TxtStatus.Text = p >= 100 ? "업데이트 적용 중 — 곧 재시작합니다" : $"업데이트 다운로드 중... {p}%";
+                ShowUpdateOverlay(p);
             }), beforeRestart: () => Dispatcher.Invoke(() => { _tray?.Dispose(); _tray = null; })); // 재시작하며 적용
         }
         catch (Exception ex)
         {
+            UpdateOverlay.Visibility = Visibility.Collapsed;
             BtnUpdate.IsEnabled = true;
             BtnUpdate.Content = "업데이트";
             Progress.Value = 0;
@@ -906,6 +920,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _reallyExit = false;
             MessageBox.Show($"업데이트 실패: {ex.Message}", "Fanbox Updater");
         }
+    }
+
+    /// <summary>씹덕 감성 업데이트 오버레이 — 진행률에 따라 표정과 멘트가 바뀐다</summary>
+    private void ShowUpdateOverlay(int p)
+    {
+        UpdateOverlay.Visibility = Visibility.Visible;
+        UpdateProgress.Value = p;
+        TxtUpdatePct.Text = $"{p}%";
+        var (face, msg) = p switch
+        {
+            >= 100 => ("(ﾉ≧∀≦)ﾉ ☆", "완료! 새 모습으로 재시작할게요~"),
+            >= 70 => ("(≧▽≦)/", "거의 다 왔어요!"),
+            >= 30 => ("(ﾉ´ヮ`)ﾉ*:･ﾟ✧", "조금만 더~ 열심히 받는 중!"),
+            _ => ("(´｡• ᵕ •｡`)", "새 버전을 데려오는 중이에요..."),
+        };
+        TxtUpdateFace.Text = face;
+        TxtUpdateMsg.Text = msg;
+        TxtStatus.Text = p >= 100 ? "업데이트 적용 중 — 곧 재시작합니다" : $"업데이트 다운로드 중... {p}%";
     }
 
     // ---------- 로그 ----------
