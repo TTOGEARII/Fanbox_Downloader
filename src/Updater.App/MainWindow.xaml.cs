@@ -21,6 +21,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _reallyExit;
     private bool _syncRunning;
     private bool _suppressRowEvents;
+    private bool _uiReady;
+    private readonly DispatcherTimer _applyDebounce;
 
     /// <summary>작가 그리드의 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화)</summary>
     public ObservableCollection<string> Categories { get; } = new();
@@ -64,6 +66,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _settings.Accounts.Any(a => a.Provider == "fanbox" && a.Enabled && !string.IsNullOrWhiteSpace(a.SessionId)))
             Loaded += (_, _) => BtnRefresh_Click(this, new RoutedEventArgs());
 
+        // 설정 탭 자동 반영: 컨트롤 변경 600ms 뒤 저장·적용 (타이핑 중 과도한 재스캔 방지)
+        _applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _applyDebounce.Tick += (_, _) => { _applyDebounce.Stop(); ApplySettings(interactive: false); };
+        WireAutoApply();
+        _uiReady = true;
+
         // UI 확인용: --demo-overlay 로 실행하면 업데이트 오버레이를 63%로 표시
         if (Environment.GetCommandLineArgs().Contains("--demo-overlay"))
             ShowUpdateOverlay(63);
@@ -73,6 +81,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         Closing += (s, e) =>
         {
+            // 포커스를 잃지 않은 텍스트박스 등 마지막 편집이 유실되지 않게 닫기 전에 반영
+            _applyDebounce.Stop();
+            ApplySettings(interactive: false);
             if (!_reallyExit && _settings.CloseToTray)
             {
                 e.Cancel = true;
@@ -168,6 +179,36 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
     {
+        // 편집 중인 셀 커밋 후 반영 (자동 반영 경로에서는 입력 중인 셀을 닫아버리지 않도록 버튼에서만)
+        GridCategories.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
+        ApplySettings(interactive: true);
+    }
+
+    /// <summary>설정 UI → _settings 반영 + 저장. 설정 탭은 자동 반영(디바운스)이라 버튼 없이도 호출된다 —
+    /// interactive=false면 경고창 없이 조용히 넘어가고, 분류 루트가 바뀐 경우에만 작가 목록을 재스캔한다.</summary>
+    private void ApplySettings(bool interactive)
+    {
+        // 분류 그리드 → 설정. 자동 반영 중에는 일시적으로 이름이 비거나 중복될 수 있어 조용히 거른다 (첫 번째 우선)
+        var cats = _categoryRows
+            .Select(r => new CategoryRoot { Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
+            .Where(c => !string.IsNullOrEmpty(c.Name))
+            .ToList();
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dupCount = cats.RemoveAll(c => !seenNames.Add(c.Name));
+        if (interactive)
+        {
+            if (cats.Count == 0)
+            {
+                MessageBox.Show("저장 분류를 최소 1개 입력하세요.", "Fanbox Updater");
+                return;
+            }
+            if (dupCount > 0)
+            {
+                MessageBox.Show("분류 이름이 중복되었습니다.", "Fanbox Updater");
+                return;
+            }
+        }
+
         var fanbox = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
         if (fanbox == null)
         {
@@ -176,23 +217,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         fanbox.SessionId = TxtSession.Text.Trim();
 
-        // 분류 그리드 → 설정 (편집 중인 셀 커밋 후 검증)
-        GridCategories.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
-        var cats = _categoryRows
-            .Select(r => new CategoryRoot { Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
-            .Where(c => !string.IsNullOrEmpty(c.Name))
-            .ToList();
-        if (cats.Count == 0)
+        var rootsChanged = false;
+        if (cats.Count > 0) // 자동 반영 중 전부 지워진 순간은 기존 분류를 유지 (최소 1개 필요)
         {
-            MessageBox.Show("저장 분류를 최소 1개 입력하세요.", "Fanbox Updater");
-            return;
+            rootsChanged = !cats.Select(c => $"{c.Name}|{c.Path}").SequenceEqual(
+                _settings.CategoryRoots.Select(c => $"{c.Name}|{c.Path}"), StringComparer.OrdinalIgnoreCase);
+            _settings.CategoryRoots = cats;
         }
-        if (cats.Select(c => c.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != cats.Count)
-        {
-            MessageBox.Show("분류 이름이 중복되었습니다.", "Fanbox Updater");
-            return;
-        }
-        _settings.CategoryRoots = cats;
 
         _settings.IllustRoot = TxtIllustRoot.Text.Trim();
         _settings.IllustMaxImages = int.TryParse(TxtIllustMax.Text, out var im) ? Math.Clamp(im, 1, 50) : 4;
@@ -218,10 +249,45 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _settings.CloseToTray = ChkCloseTray.IsChecked == true;
 
         _settings.Save(App.SettingsPath);
-        RefreshCategoryUi();
-        LoadArtistsFromCache();
+        if (interactive || rootsChanged)
+        {
+            RefreshCategoryUi();
+            LoadArtistsFromCache(); // 상태바에 '폴더 N개' 안내를 띄운다
+        }
         UpdateNextRunText();
-        TxtStatusBar.Text = "설정을 저장했습니다.";
+        if (interactive) TxtStatusBar.Text = "설정을 저장했습니다.";
+        else if (cats.Count == 0) TxtStatusBar.Text = "분류가 모두 비어 있어 기존 저장 분류를 유지합니다 (최소 1개 필요).";
+        else if (!rootsChanged) TxtStatusBar.Text = "설정이 자동 반영되었습니다.";
+    }
+
+    /// <summary>설정 컨트롤 변경 시 자동 반영을 예약한다 (600ms 디바운스).</summary>
+    private void QueueAutoApply()
+    {
+        if (!_uiReady) return;
+        _applyDebounce.Stop();
+        _applyDebounce.Start();
+    }
+
+    /// <summary>설정 탭의 모든 컨트롤 변경을 자동 반영에 연결한다.
+    /// 텍스트박스는 타이핑마다 저장하지 않도록 포커스를 잃을 때 반영한다.</summary>
+    private void WireAutoApply()
+    {
+        foreach (var toggle in new System.Windows.Controls.Primitives.ToggleButton[]
+                 {
+                     ChkSaveText, ChkCover, ChkAutoCreate, ChkPaidOnly, ChkExternal, ChkAutoExtract,
+                     ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
+                     ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
+                 })
+        {
+            toggle.Checked += (_, _) => QueueAutoApply();
+            toggle.Unchecked += (_, _) => QueueAutoApply();
+        }
+        foreach (var tb in new[]
+                 {
+                     TxtSession, TxtIllustRoot, TxtIllustMax, TxtTemplate, TxtDateFormat,
+                     TxtParallel, TxtDailyTime, TxtIntervalHours,
+                 })
+            tb.LostFocus += (_, _) => QueueAutoApply();
     }
 
     /// <summary>분류 콤보박스(작가 그리드·필터)를 분류 그리드 내용으로 갱신 — 분류 입력 즉시 반영</summary>
@@ -244,6 +310,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         row.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(CategoryRow.Name)) RefreshCategoryUi();
+            if (e.PropertyName is nameof(CategoryRow.Name) or nameof(CategoryRow.Path) or nameof(CategoryRow.SplitIllust))
+                QueueAutoApply();
         };
     }
 
@@ -281,7 +349,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         foreach (var row in targets) _categoryRows.Remove(row);
         RefreshCategoryUi();
-        TxtStatusBar.Text = $"분류 {targets.Count}개를 목록에서 제거했습니다 — '설정 저장'을 눌러야 적용됩니다.";
+        QueueAutoApply();
+        TxtStatusBar.Text = $"분류 {targets.Count}개를 제거했습니다.";
     }
 
     private void BtnBrowseCategory_Click(object sender, RoutedEventArgs e)
