@@ -78,7 +78,40 @@
                                 <MenuItem Header="FANBOX 페이지 열기" Click="MenuOpenFanbox_Click"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMapped}" Value="False">
+                                        <Setter Property="Background" Value="#26FF8C50"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
                         <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="30" IsReadOnly="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="13">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="✔"/>
+                                                    <Setter Property="Foreground" Value="#6CCB5F"/>
+                                                    <Setter Property="ToolTip" Value="작가와 매핑됨"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMapped}" Value="False">
+                                                            <Setter Property="Text" Value="!"/>
+                                                            <Setter Property="Foreground" Value="#FF9472"/>
+                                                            <Setter Property="FontWeight" Value="Bold"/>
+                                                            <Setter Property="ToolTip" Value="매핑 안 됨 — [선택] 버튼이나 creatorId 입력으로 연결하세요"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridCheckBoxColumn Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="92">
                                 <DataGridCheckBoxColumn.Header>
                                     <CheckBox Content="동기화" IsChecked="True" Click="ChkAllSync_Click"
@@ -100,8 +133,19 @@
                             <DataGridTemplateColumn Header="매핑" Width="56">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="선택" Padding="8,1" FontSize="11" Click="BtnMapCreator_Click"
-                                                ToolTip="팔로우/후원 중인 작가 목록에서 골라 이 폴더와 수동 매핑"/>
+                                        <Button Padding="8,1" FontSize="11" Click="BtnMapCreator_Click"
+                                                ToolTip="팔로우/후원 중인 작가 목록에서 골라 이 폴더와 수동 매핑">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                    <Setter Property="Content" Value="변경"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMapped}" Value="False">
+                                                            <Setter Property="Content" Value="선택"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

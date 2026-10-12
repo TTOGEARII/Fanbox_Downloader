@@ -42,18 +42,26 @@ public class ArtistRow : INotifyPropertyChanged
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string FolderName { get => _folderName; set => Set(ref _folderName, value); }
-    public string CreatorId { get => _creatorId; set => Set(ref _creatorId, value); }
+    public string CreatorId
+    {
+        get => _creatorId;
+        set { if (Set(ref _creatorId, value)) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMapped))); }
+    }
     public string CreatorName { get => _creatorName; set => Set(ref _creatorName, value); }
     public string Status { get => _status; set => Set(ref _status, value); }
     public int DownloadedCount { get => _downloadedCount; set => Set(ref _downloadedCount, value); }
     public string LastResult { get => _lastResult; set => Set(ref _lastResult, value); }
 
+    /// <summary>creatorId가 연결되어 있는지 — 작가 그리드의 매핑 표시용</summary>
+    public bool IsMapped => !string.IsNullOrEmpty(_creatorId);
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        return true;
     }
 }
