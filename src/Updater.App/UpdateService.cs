@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using Velopack;
 using Velopack.Sources;
 
@@ -30,9 +31,45 @@ public class UpdateService
     public async Task DownloadAndApplyAsync(UpdateInfo info, Action<int>? progress = null, Action? beforeRestart = null)
     {
         await _manager.DownloadUpdatesAsync(info, progress);
+        await PrewarmAntivirusScanAsync(info);
         beforeRestart?.Invoke();
         StartRestartWatchdog(info.TargetFullRelease.Version.ToString());
         _manager.ApplyUpdatesAndRestart(info);
+    }
+
+    /// <summary>백신(V3 Lite 등)이 업데이트로 교체된 "처음 보는" 실행 파일의 실행을
+    /// 검사가 끝날 때까지 몇 분씩 차단하는 문제가 있어, 재시작 전에 새 버전 파일들을
+    /// 임시 폴더에 미리 풀어 백신이 먼저 검사하도록 유도한다 (해시 캐시 선적재).</summary>
+    private static async Task PrewarmAntivirusScanAsync(UpdateInfo info)
+    {
+        try
+        {
+            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+            var pkg = Path.Combine(root, "packages", info.TargetFullRelease.FileName);
+            if (!File.Exists(pkg)) return;
+
+            var dest = Path.Combine(Path.GetTempPath(), "FanboxUpdater-prewarm");
+            if (Directory.Exists(dest)) Directory.Delete(dest, true);
+            Directory.CreateDirectory(dest);
+
+            await Task.Run(() =>
+            {
+                using var zip = System.IO.Compression.ZipFile.OpenRead(pkg);
+                foreach (var entry in zip.Entries)
+                {
+                    var name = entry.FullName.Replace('\\', '/');
+                    if (!name.StartsWith("lib/app/", StringComparison.OrdinalIgnoreCase) ||
+                        entry.Name.Length == 0) continue;
+                    var target = Path.Combine(dest, name["lib/app/".Length..].Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    entry.ExtractToFile(target, overwrite: true);
+                }
+            });
+
+            // 백신이 방금 쓴 파일들을 검사할 시간을 준다.
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        }
+        catch { /* 사전 검사 유도는 실패해도 업데이트 자체에는 지장 없음 */ }
     }
 
     /// <summary>Update.exe의 자동 재시작이 "액세스 거부"로 실패하는 환경이 있어
@@ -61,9 +98,9 @@ public class UpdateService
                 )
                 :applied
                 "%sys%\ping.exe" -n 5 127.0.0.1 >nul
-                rem 교체 직후 실행 파일이 수십 초간 잠기는 경우(백신 스캔 등)가 있어
-                rem 앱이 뜰 때까지 10초 간격으로 최대 2분간 재시도한다.
-                for /l %%j in (1,1,12) do (
+                rem 교체 직후 백신(V3 Lite 등)이 새 실행 파일을 몇 분간 차단할 수 있어
+                rem 앱이 뜰 때까지 10초 간격으로 최대 6분간 재시도한다.
+                for /l %%j in (1,1,36) do (
                   "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
                   start "" "{stub}"
                   "%sys%\ping.exe" -n 11 127.0.0.1 >nul

@@ -344,6 +344,10 @@
                                  Minimum="0" Maximum="100" Foreground="#FF77A8"/>
                     <TextBlock Text="☆ 잠시만 기다려 주세요 ☆" FontSize="11" HorizontalAlignment="Center"
                                Margin="0,12,0,0" Foreground="#8A8A95"/>
+                    <Border Margin="0,14,0,0" Padding="10,8" CornerRadius="8" Background="#22FF77A8">
+                        <TextBlock FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Foreground="#C9C9D4"
+                                   Text="백신(V3 등)이 새 파일을 검사하는 동안 재시작이 몇 분 늦어질 수 있어요. 앱이 바로 다시 뜨길 원하면 백신의 검사 예외에 이 폴더를 추가해 주세요:&#10;%LocalAppData%\FanboxUpdater"/>
+                    </Border>
                 </StackPanel>
             </Border>
         </Grid>
