@@ -22,9 +22,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _syncRunning;
     private bool _suppressRowEvents;
 
-    /// <summary>작가 그리드의 분류 콤보박스 항목 (설정의 CategoryRoots에서 채움)</summary>
+    /// <summary>작가 그리드의 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화)</summary>
     public ObservableCollection<string> Categories { get; } = new();
-    private readonly ObservableCollection<CategoryRoot> _categoryRows = new();
+    private readonly ObservableCollection<CategoryRow> _categoryRows = new();
+    /// <summary>마지막으로 가져온 팔로우/후원 작가 목록 (수동 매핑 선택용)</summary>
+    private List<CreatorInfo> _creatorCache = new();
 
     public MainWindow()
     {
@@ -112,7 +114,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TxtSession.Text = fanbox?.SessionId ?? "";
         _categoryRows.Clear();
         foreach (var c in _settings.CategoryRoots)
-            _categoryRows.Add(new CategoryRoot { Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust });
+        {
+            var row = new CategoryRow { Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust };
+            HookCategoryRow(row);
+            _categoryRows.Add(row);
+        }
         TxtIllustRoot.Text = _settings.IllustRoot;
         TxtIllustMax.Text = _settings.IllustMaxImages.ToString();
         TxtTemplate.Text = _settings.FolderNameTemplate;
@@ -149,7 +155,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // 분류 그리드 → 설정 (편집 중인 셀 커밋 후 검증)
         GridCategories.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
         var cats = _categoryRows
-            .Select(c => new CategoryRoot { Name = c.Name.Trim(), Path = c.Path.Trim(), SplitIllust = c.SplitIllust })
+            .Select(r => new CategoryRoot { Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
             .Where(c => !string.IsNullOrEmpty(c.Name))
             .ToList();
         if (cats.Count == 0)
@@ -192,12 +198,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TxtStatusBar.Text = "설정을 저장했습니다.";
     }
 
-    /// <summary>분류 콤보박스(작가 그리드·필터)를 설정의 분류 목록으로 갱신</summary>
+    /// <summary>분류 콤보박스(작가 그리드·필터)를 분류 그리드 내용으로 갱신 — 분류 입력 즉시 반영</summary>
     private void RefreshCategoryUi()
     {
         Categories.Clear();
-        foreach (var c in _settings.CategoryRoots.Where(c => !string.IsNullOrWhiteSpace(c.Name)))
-            Categories.Add(c.Name);
+        foreach (var r in _categoryRows.Where(r => !string.IsNullOrWhiteSpace(r.Name)))
+            if (!Categories.Contains(r.Name)) Categories.Add(r.Name);
 
         var selected = CmbFilter.SelectedItem as string ?? "전체";
         var items = new List<string> { "전체" };
@@ -207,12 +213,56 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         CmbFilter.SelectedItem = items.Contains(selected) ? selected : "전체";
     }
 
+    private void HookCategoryRow(CategoryRow row)
+    {
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(CategoryRow.Name)) RefreshCategoryUi();
+        };
+    }
+
     private void BtnAddCategory_Click(object sender, RoutedEventArgs e)
-        => _categoryRows.Add(new CategoryRoot());
+    {
+        var row = new CategoryRow();
+        HookCategoryRow(row);
+        _categoryRows.Add(row);
+        // 새 줄에서 바로 경로를 고를 수 있게 폴더 선택을 띄움
+        var picked = PickFolder(null);
+        if (picked != null)
+        {
+            row.Path = picked;
+            if (string.IsNullOrWhiteSpace(row.Name)) row.Name = Path.GetFileName(picked.TrimEnd('\\'));
+        }
+        GridCategories.SelectedItem = row;
+        GridCategories.ScrollIntoView(row);
+    }
 
     private void BtnRemoveCategory_Click(object sender, RoutedEventArgs e)
     {
-        if (GridCategories.SelectedItem is CategoryRoot row) _categoryRows.Remove(row);
+        if (GridCategories.SelectedItem is CategoryRow row) _categoryRows.Remove(row);
+        RefreshCategoryUi();
+    }
+
+    private void BtnBrowseCategory_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not CategoryRow row) return;
+        var picked = PickFolder(row.Path);
+        if (picked == null) return;
+        row.Path = picked;
+        if (string.IsNullOrWhiteSpace(row.Name)) row.Name = Path.GetFileName(picked.TrimEnd('\\'));
+    }
+
+    private void BtnBrowseIllust_Click(object sender, RoutedEventArgs e)
+    {
+        var picked = PickFolder(TxtIllustRoot.Text.Trim());
+        if (picked != null) TxtIllustRoot.Text = picked;
+    }
+
+    private static string? PickFolder(string? initial)
+    {
+        using var dlg = new System.Windows.Forms.FolderBrowserDialog { ShowNewFolderButton = true };
+        if (!string.IsNullOrWhiteSpace(initial) && Directory.Exists(initial)) dlg.SelectedPath = initial;
+        return dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK ? dlg.SelectedPath : null;
     }
 
     // ---------- 작가 목록 ----------
@@ -376,22 +426,30 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }, DispatcherPriority.Background);
     }
 
-    private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
+    /// <summary>팔로우/후원 작가 목록을 가져와 캐시에 저장. 쿠키 미설정 등이면 null.</summary>
+    private async Task<List<CreatorInfo>?> FetchCreatorsAsync()
     {
-        if (_syncRunning) return;
         var account = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox" && a.Enabled);
         if (account == null || string.IsNullOrWhiteSpace(account.SessionId))
         {
             MessageBox.Show("설정 탭에서 FANBOXSESSID 쿠키를 먼저 입력하세요.", "Fanbox Updater");
-            return;
+            return null;
         }
+        using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
+        await provider.InitializeAsync(CancellationToken.None);
+        _creatorCache = await provider.GetFollowedCreatorsAsync(CancellationToken.None);
+        return _creatorCache;
+    }
+
+    private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncRunning) return;
         BtnRefresh.IsEnabled = false;
         TxtStatus.Text = "작가 목록 가져오는 중...";
         try
         {
-            using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
-            await provider.InitializeAsync(CancellationToken.None);
-            var creators = await provider.GetFollowedCreatorsAsync(CancellationToken.None);
+            var creators = await FetchCreatorsAsync();
+            if (creators == null) { TxtStatus.Text = "대기 중"; return; }
             var engine = new SyncEngine(_settings, _state, SaveState);
             ApplyMatches(engine.MatchFolders(creators));
             TxtStatus.Text = $"작가 매칭 완료 — 팔로우/후원 {creators.Count}명";
@@ -402,6 +460,121 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             AppendLog($"[오류] {ex.Message}");
         }
         finally { BtnRefresh.IsEnabled = true; }
+    }
+
+    // ---------- 수동 매핑 ----------
+
+    private async void BtnMapCreator_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ArtistRow row) return;
+
+        if (_creatorCache.Count == 0)
+        {
+            BtnRefresh.IsEnabled = false;
+            TxtStatus.Text = "작가 목록 가져오는 중...";
+            try
+            {
+                if (await FetchCreatorsAsync() == null) { TxtStatus.Text = "대기 중"; return; }
+                TxtStatus.Text = $"팔로우/후원 작가 {_creatorCache.Count}명";
+            }
+            catch (Exception ex)
+            {
+                TxtStatus.Text = "작가 목록 조회 실패";
+                AppendLog($"[오류] {ex.Message}");
+                return;
+            }
+            finally { BtnRefresh.IsEnabled = true; }
+        }
+        ShowCreatorPicker(row);
+    }
+
+    private void ShowCreatorPicker(ArtistRow row)
+    {
+        var all = _creatorCache.OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        string Disp(CreatorInfo c) => $"{c.DisplayName}  ({c.CreatorId})";
+        var byDisp = all.ToDictionary(Disp);
+
+        var search = new Wpf.Ui.Controls.TextBox { PlaceholderText = "작가명 또는 creatorId 검색" };
+        var list = new System.Windows.Controls.ListBox { Height = 320, Margin = new Thickness(0, 8, 0, 8) };
+        void ApplyFilter()
+        {
+            var q = search.Text.Trim();
+            list.ItemsSource = all
+                .Where(c => q.Length == 0
+                    || c.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || c.CreatorId.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Select(Disp).ToList();
+        }
+        search.TextChanged += (_, _) => ApplyFilter();
+        ApplyFilter();
+        // 현재 매핑된 작가를 미리 선택
+        if (!string.IsNullOrEmpty(row.CreatorId))
+        {
+            var cur = all.FirstOrDefault(c => string.Equals(c.CreatorId, row.CreatorId, StringComparison.OrdinalIgnoreCase));
+            if (cur != null) { list.SelectedItem = Disp(cur); list.ScrollIntoView(list.SelectedItem); }
+        }
+
+        var ok = new System.Windows.Controls.Button { Content = "매핑", Padding = new Thickness(18, 6, 18, 6), IsDefault = true };
+        var unmap = new System.Windows.Controls.Button { Content = "매핑 해제", Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(8, 0, 0, 0) };
+        var cancel = new System.Windows.Controls.Button { Content = "취소", Padding = new Thickness(18, 6, 18, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(ok); buttons.Children.Add(unmap); buttons.Children.Add(cancel);
+
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = $"'{row.FolderName}' 폴더와 매핑할 작가를 선택하세요.",
+            Margin = new Thickness(0, 0, 0, 10),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(search);
+        panel.Children.Add(list);
+        panel.Children.Add(buttons);
+
+        var dlg = new Window
+        {
+            Title = "작가 수동 매핑",
+            Content = panel,
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = System.Windows.Media.Brushes.Transparent,
+        };
+        bool? result = null;
+        ok.Click += (_, _) => { result = true; dlg.Close(); };
+        unmap.Click += (_, _) => { result = false; dlg.Close(); };
+        list.MouseDoubleClick += (_, _) => { if (list.SelectedItem != null) { result = true; dlg.Close(); } };
+        dlg.ShowDialog();
+
+        if (result == false)
+        {
+            _settings.Mapping.Remove(row.FolderName);
+            _settings.Save(App.SettingsPath);
+            _suppressRowEvents = true;
+            row.CreatorId = "";
+            row.CreatorName = "";
+            row.Status = "미확인";
+            row.DownloadedCount = 0;
+            _suppressRowEvents = false;
+            TxtStatusBar.Text = $"'{row.FolderName}' 매핑을 해제했습니다.";
+            return;
+        }
+        if (result != true || list.SelectedItem is not string disp || !byDisp.TryGetValue(disp, out var creator)) return;
+
+        _settings.Mapping[row.FolderName] = creator.CreatorId;
+        _settings.Save(App.SettingsPath);
+        _suppressRowEvents = true;
+        row.CreatorId = creator.CreatorId;
+        row.CreatorName = creator.DisplayName;
+        row.Status = "수동 매핑";
+        row.DownloadedCount = _state.CountFor(creator.CreatorId);
+        row.Enabled = !_settings.DisabledCreators.Contains(creator.CreatorId);
+        row.IllustThreshold = _settings.CreatorIllustThresholds.TryGetValue(creator.CreatorId, out var th)
+            ? th.ToString() : "";
+        _suppressRowEvents = false;
+        TxtStatusBar.Text = $"'{row.FolderName}' ↔ {creator.DisplayName} ({creator.CreatorId}) 매핑 저장됨";
     }
 
     private void ApplyMatches(List<FolderMatch> matches)

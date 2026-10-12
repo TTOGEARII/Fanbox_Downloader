@@ -3,6 +3,27 @@ using System.Runtime.CompilerServices;
 
 namespace Updater.App;
 
+/// <summary>설정 탭 저장 분류 그리드 한 줄 (편집용 — 저장 시 CategoryRoot로 변환)</summary>
+public class CategoryRow : INotifyPropertyChanged
+{
+    private string _name = "";
+    private string _path = "";
+    private bool _splitIllust;
+
+    public string Name { get => _name; set => Set(ref _name, value); }
+    public string Path { get => _path; set => Set(ref _path, value); }
+    public bool SplitIllust { get => _splitIllust; set => Set(ref _splitIllust, value); }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
 public class ArtistRow : INotifyPropertyChanged
 {
     private bool _enabled = true;
