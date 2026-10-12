@@ -35,7 +35,7 @@ jobs:
         continue-on-error: true
 
       - name: Pack installer
-        run: vpk pack -u FanboxUpdater -v ${{ steps.ver.outputs.version }} -p publish -e FanboxUpdater.exe --packTitle "Fanbox Updater" --packAuthors "TTOGEARII" --shortcuts Desktop,StartMenuRoot --splashImage assets/splash.png --splashProgressColor "#FF77A8"
+        run: vpk pack -u FanboxUpdater -v ${{ steps.ver.outputs.version }} -p publish -e FanboxUpdater.exe --packTitle "Fanbox Updater" --packAuthors "TTOGEARII" --shortcuts Desktop,StartMenuRoot --splashImage assets/splash.gif --splashProgressColor "#FF77A8"
 
       - name: Upload to GitHub Release
         run: vpk upload github --repoUrl https://github.com/TTOGEARII/Fanbox_Downloader --publish --releaseName "Fanbox Updater v${{ steps.ver.outputs.version }}" --tag ${{ github.ref_name }} --token ${{ secrets.GITHUB_TOKEN }}

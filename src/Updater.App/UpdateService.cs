@@ -45,69 +45,55 @@ public class UpdateService
     /// <summary>--demo-splash 실행 인자용: 적용 스플래시를 10초간 미리 본다.</summary>
     public static void ShowApplySplashDemo() => StartApplySplash("0.0.0-demo", timeoutSeconds: 10);
 
-    /// <summary>업데이트 적용 동안 보여줄 자체 스플래시 창(PowerShell WPF)을 임시 폴더에서 띄운다.
+    /// <summary>업데이트 적용 동안 보여줄 자체 스플래시 창(PowerShell WinForms, 움직이는 GIF)을 임시 폴더에서 띄운다.
     /// 앱 폴더(current)가 통째로 교체되므로 이미지·스크립트를 임시 폴더로 복사해 실행해야 한다.
     /// 새 버전이 적용되고 앱이 다시 뜨면 닫히고, timeoutSeconds가 지나면 스스로 닫힌다.</summary>
     private static void StartApplySplash(string targetVersion, int timeoutSeconds = 180)
     {
         try
         {
-            var src = Path.Combine(AppContext.BaseDirectory, "assets", "splash.png");
+            var src = Path.Combine(AppContext.BaseDirectory, "assets", "splash.gif");
             if (!File.Exists(src)) return;
             var tmp = Path.Combine(Path.GetTempPath(), "FanboxUpdater-splash");
             Directory.CreateDirectory(tmp);
-            var img = Path.Combine(tmp, "splash.png");
+            var img = Path.Combine(tmp, "splash.gif");
             File.Copy(src, img, overwrite: true);
 
             var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
             var sqVersion = Path.Combine(root, "current", "sq.version");
             var script = Path.Combine(tmp, "splash.ps1");
             File.WriteAllText(script, $$"""
-                Add-Type -AssemblyName PresentationFramework
-                $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-                $bmp.BeginInit()
-                $bmp.UriSource = New-Object System.Uri('{{img}}')
-                $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-                $bmp.EndInit()
+                Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+                [System.Windows.Forms.Application]::EnableVisualStyles()
 
-                $image = New-Object System.Windows.Controls.Image
-                $image.Source = $bmp
-                $image.Width = 480; $image.Height = 300
+                # WPF Image는 GIF 애니메이션을 재생하지 못해 WinForms PictureBox를 쓴다
+                $gif = [System.Drawing.Image]::FromFile('{{img}}')
 
-                $bar = New-Object System.Windows.Controls.ProgressBar
-                $bar.IsIndeterminate = $true
-                $bar.Height = 10
-                $bar.BorderThickness = 0
-                $bar.Foreground = [System.Windows.Media.SolidColorBrush]([System.Windows.Media.ColorConverter]::ConvertFromString('#FF77A8'))
-                $bar.Background = [System.Windows.Media.SolidColorBrush]([System.Windows.Media.ColorConverter]::ConvertFromString('#1C1B22'))
+                $pb = New-Object System.Windows.Forms.PictureBox
+                $pb.Image = $gif
+                $pb.SizeMode = 'AutoSize'
 
-                $panel = New-Object System.Windows.Controls.StackPanel
-                [void]$panel.Children.Add($image)
-                [void]$panel.Children.Add($bar)
-
-                $w = New-Object System.Windows.Window
-                $w.WindowStyle = 'None'
-                $w.ResizeMode = 'NoResize'
-                $w.AllowsTransparency = $true
-                $w.Background = [System.Windows.Media.Brushes]::Transparent
-                $w.Topmost = $true
-                $w.ShowInTaskbar = $false
-                $w.WindowStartupLocation = 'CenterScreen'
-                $w.SizeToContent = 'WidthAndHeight'
-                $w.Content = $panel
+                $f = New-Object System.Windows.Forms.Form
+                $f.FormBorderStyle = 'None'
+                $f.StartPosition = 'CenterScreen'
+                $f.ClientSize = New-Object System.Drawing.Size($gif.Width, $gif.Height)
+                $f.TopMost = $true
+                $f.ShowInTaskbar = $false
+                $f.BackColor = [System.Drawing.Color]::FromArgb(14, 14, 18)
+                $f.Controls.Add($pb)
 
                 $sq = '{{sqVersion}}'
                 $deadline = (Get-Date).AddSeconds({{timeoutSeconds}})
-                $timer = New-Object System.Windows.Threading.DispatcherTimer
-                $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+                $timer = New-Object System.Windows.Forms.Timer
+                $timer.Interval = 500
                 $timer.Add_Tick({
                     $applied = $false
                     try { $applied = (Test-Path $sq) -and (Select-String -Path $sq -Pattern '<version>{{targetVersion}}' -SimpleMatch -Quiet) } catch {}
                     $running = [bool](Get-Process FanboxUpdater -ErrorAction SilentlyContinue)
-                    if (($applied -and $running) -or ((Get-Date) -gt $deadline)) { $timer.Stop(); $w.Close() }
+                    if (($applied -and $running) -or ((Get-Date) -gt $deadline)) { $timer.Stop(); $f.Close() }
                 })
                 $timer.Start()
-                [void]$w.ShowDialog()
+                [void]$f.ShowDialog()
                 """,
                 // PowerShell 5.1은 BOM 없는 UTF-8 스크립트를 ANSI로 읽어 비ASCII 경로가 깨진다
                 new System.Text.UTF8Encoding(true));

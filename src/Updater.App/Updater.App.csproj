@@ -10,14 +10,14 @@
     <AssemblyName>FanboxUpdater</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.0.35</Version>
+    <Version>1.0.36</Version>
     <StartupObject>Updater.App.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
     <Resource Include="app.ico" />
     <!-- 업데이트 적용 중 자체 스플래시 창이 쓰는 이미지 (UpdateService.StartApplySplash) -->
-    <Content Include="..\..\assets\splash.png" Link="assets\splash.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\assets\splash.gif" Link="assets\splash.gif" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
