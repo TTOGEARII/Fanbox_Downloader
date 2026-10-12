@@ -46,6 +46,10 @@ public class AppSettings
     public Dictionary<string, string> Mapping { get; set; } = new();
     /// <summary>creatorId → 분류 이름 (없으면 첫 분류)</summary>
     public Dictionary<string, string> CreatorCategories { get; set; } = new();
+    /// <summary>creatorId → 작가명 캐시 (API 조회 시 갱신 — 재시작 후에도 작가명 표시용)</summary>
+    public Dictionary<string, string> CreatorNames { get; set; } = new();
+    /// <summary>폴더명 → creatorId 자동 매칭 캐시 (마지막 새로고침 결과 — 시작 시 그리드 표시용, 새로고침마다 재계산)</summary>
+    public Dictionary<string, string> AutoMatches { get; set; } = new();
     /// <summary>동기화에서 제외할 creatorId 목록</summary>
     public HashSet<string> DisabledCreators { get; set; } = new();
 

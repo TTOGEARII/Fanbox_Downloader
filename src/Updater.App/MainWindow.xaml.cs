@@ -287,13 +287,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         foreach (var dir in Directory.GetDirectories(root))
         {
             var folder = Path.GetFileName(dir);
-            _settings.Mapping.TryGetValue(folder, out var mapped);
+            bool manual = _settings.Mapping.TryGetValue(folder, out var mapped);
+            if (!manual && _settings.AutoMatches.TryGetValue(folder, out var auto)) mapped = auto;
             var row = new ArtistRow
             {
                 FolderName = folder,
                 Category = category,
                 CreatorId = mapped ?? "",
-                Status = string.IsNullOrEmpty(mapped) ? "미확인" : "수동 매핑",
+                CreatorName = mapped != null && _settings.CreatorNames.TryGetValue(mapped, out var cachedName)
+                    ? cachedName : "",
+                Status = string.IsNullOrEmpty(mapped) ? "미확인" : (manual ? "수동 매핑" : "자동 매칭"),
                 DownloadedCount = string.IsNullOrEmpty(mapped) ? 0 : _state.CountFor(mapped),
                 Enabled = string.IsNullOrEmpty(mapped) || !_settings.DisabledCreators.Contains(mapped),
                 IllustThreshold = mapped != null && _settings.CreatorIllustThresholds.TryGetValue(mapped, out var th)
@@ -452,6 +455,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 _settings.Mapping[row.FolderName] = id;
                 if (row.Status is "미확인" or "매칭 안 됨") row.Status = "수동 매핑";
                 row.DownloadedCount = _state.CountFor(id);
+                if (_settings.CreatorNames.TryGetValue(id, out var knownName))
+                    row.CreatorName = knownName;
             }
 
             // 일러 기준 장수 (빈칸=전역 기본, 0=분리 안 함)
@@ -481,6 +486,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
         await provider.InitializeAsync(CancellationToken.None);
         _creatorCache = await provider.GetFollowedCreatorsAsync(CancellationToken.None);
+        // 작가명 캐시 갱신 — 재시작 후에도 그리드에 작가명이 바로 보이게
+        foreach (var c in _creatorCache)
+            _settings.CreatorNames[c.CreatorId] = c.DisplayName;
+        _settings.Save(App.SettingsPath);
         return _creatorCache;
     }
 
@@ -650,6 +659,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
         }
         _suppressRowEvents = false;
+
+        // 작가명 캐시 갱신 (이름을 모르는 매핑은 creatorId가 그대로 들어오므로 캐시를 덮어쓰지 않음)
+        foreach (var m in matches)
+        {
+            if (m.CreatorId == null || string.IsNullOrEmpty(m.CreatorName)) continue;
+            if (m.CreatorName == m.CreatorId && _settings.CreatorNames.ContainsKey(m.CreatorId)) continue;
+            _settings.CreatorNames[m.CreatorId] = m.CreatorName;
+        }
+        // 자동 매칭 결과 캐시 — 재시작 후에도 그리드에 매칭 상태가 바로 보이게 (새로고침마다 재계산)
+        var newAuto = new Dictionary<string, string>();
+        foreach (var m in matches)
+            if (m.CreatorId != null && !_settings.Mapping.ContainsKey(m.FolderName))
+                newAuto[m.FolderName] = m.CreatorId;
+        _settings.AutoMatches = newAuto;
+        _settings.Save(App.SettingsPath);
     }
 
     // ---------- 동기화 ----------
