@@ -340,6 +340,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _artists.Add(row);
         }
         _suppressRowEvents = false;
+        RefreshAllSyncCheckState();
         TxtStatusBar.Text = $"폴더 {_artists.Count}개. '작가 목록 새로고침'을 누르면 자동 매칭을 실행합니다."
             + (missing.Count > 0 ? $"  (접근 불가 경로 — {string.Join(", ", missing)})" : "");
     }
@@ -356,10 +357,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnRowEnabledChanged(ArtistRow row)
     {
+        RefreshAllSyncCheckState();
         if (string.IsNullOrEmpty(row.CreatorId)) return;
         if (row.Enabled) _settings.DisabledCreators.Remove(row.CreatorId);
         else _settings.DisabledCreators.Add(row.CreatorId);
         _settings.Save(App.SettingsPath);
+    }
+
+    /// <summary>헤더 전체선택 체크박스를 보이는 행들의 실제 상태에 맞춘다 (전체 켬 / 전체 끔 / 섞임).</summary>
+    private void RefreshAllSyncCheckState()
+    {
+        if (ChkAllSync == null) return;
+        var rows = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists)
+            .Cast<object>().OfType<ArtistRow>().ToList();
+        if (rows.Count == 0) { ChkAllSync.IsChecked = false; return; }
+        var on = rows.Count(r => r.Enabled);
+        ChkAllSync.IsChecked = on == rows.Count ? true : on == 0 ? false : (bool?)null;
     }
 
     private void OnRowCategoryChanged(ArtistRow row)
@@ -416,6 +429,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         _suppressRowEvents = false;
         _settings.Save(App.SettingsPath);
+        RefreshAllSyncCheckState();
         TxtStatusBar.Text = $"{count}개 작가 동기화 {(isChecked ? "전체 선택" : "전체 해제")}";
     }
 
@@ -432,7 +446,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var cat = CmbFilter.SelectedItem as string ?? "전체";
         var q = TxtSearch.Text.Trim();
         var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
-        if (cat == "전체" && q.Length == 0) { view.Filter = null; return; }
+        if (cat == "전체" && q.Length == 0) { view.Filter = null; RefreshAllSyncCheckState(); return; }
         view.Filter = o =>
         {
             var r = (ArtistRow)o;
@@ -449,6 +463,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 || r.CreatorId.Contains(q, StringComparison.OrdinalIgnoreCase);
         };
         TxtStatusBar.Text = $"표시 {view.Cast<object>().Count()} / 전체 {_artists.Count}";
+        RefreshAllSyncCheckState();
     }
 
     private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
@@ -643,7 +658,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             row.CreatorName = "";
             row.Status = "미확인";
             row.DownloadedCount = 0;
+            row.Enabled = false; // 미매핑 폴더는 동기화 대상이 아님
             _suppressRowEvents = false;
+            RefreshAllSyncCheckState();
             TxtStatusBar.Text = $"'{row.FolderName}' 매핑을 해제했습니다.";
             return;
         }
@@ -660,6 +677,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         row.IllustThreshold = _settings.CreatorIllustThresholds.TryGetValue(creator.CreatorId, out var th)
             ? th.ToString() : "";
         _suppressRowEvents = false;
+        RefreshAllSyncCheckState();
         TxtStatusBar.Text = $"'{row.FolderName}' ↔ {creator.DisplayName} ({creator.CreatorId}) 매핑 저장됨";
     }
 
@@ -703,12 +721,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _settings.CreatorNames[m.CreatorId] = m.CreatorName;
         }
         // 자동 매칭 결과 캐시 — 재시작 후에도 그리드에 매칭 상태가 바로 보이게 (새로고침마다 재계산)
-        var newAuto = new Dictionary<string, string>();
-        foreach (var m in matches)
-            if (m.CreatorId != null && !_settings.Mapping.ContainsKey(m.FolderName))
-                newAuto[m.FolderName] = m.CreatorId;
-        _settings.AutoMatches = newAuto;
+        // 매칭이 하나도 없으면(작가 목록 조회 실패/쿠키 만료 등) 기존 캐시를 지우지 않고 보존한다
+        if (matches.Any(m => m.CreatorId != null))
+        {
+            var newAuto = new Dictionary<string, string>();
+            foreach (var m in matches)
+                if (m.CreatorId != null && !_settings.Mapping.ContainsKey(m.FolderName))
+                    newAuto[m.FolderName] = m.CreatorId;
+            _settings.AutoMatches = newAuto;
+        }
         _settings.Save(App.SettingsPath);
+        RefreshAllSyncCheckState();
     }
 
     // ---------- 동기화 ----------

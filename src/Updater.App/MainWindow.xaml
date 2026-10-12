@@ -114,7 +114,7 @@
                             </DataGridTemplateColumn>
                             <DataGridCheckBoxColumn Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="92">
                                 <DataGridCheckBoxColumn.Header>
-                                    <CheckBox Content="동기화" IsChecked="True" Click="ChkAllSync_Click"
+                                    <CheckBox x:Name="ChkAllSync" Content="동기화" Click="ChkAllSync_Click"
                                               ToolTip="전체 선택/해제 (필터가 걸려 있으면 보이는 작가만)"/>
                                 </DataGridCheckBoxColumn.Header>
                             </DataGridCheckBoxColumn>
