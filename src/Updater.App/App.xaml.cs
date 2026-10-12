@@ -103,7 +103,8 @@ public partial class App : System.Windows.Application
             var root = doc.RootElement;
             var settings = new AppSettings
             {
-                NasRoot = root.TryGetProperty("NasRoot", out var nr) ? nr.GetString() ?? "" : "",
+                // "NasRoot"는 구버전 콘솔 config.json의 실제 키 이름 (이름과 달리 아무 디렉토리나 가능)
+                LegacyVideoRoot = root.TryGetProperty("NasRoot", out var nr) ? nr.GetString() ?? "" : "",
                 RequestDelayMs = root.TryGetProperty("RequestDelayMs", out var rd) ? rd.GetInt32() : 1000,
                 DownloadCoverImage = root.TryGetProperty("DownloadCoverImage", out var dc) && dc.GetBoolean(),
             };

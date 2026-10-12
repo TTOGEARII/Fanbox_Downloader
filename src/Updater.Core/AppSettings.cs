@@ -7,8 +7,10 @@ public class AppSettings
     public List<AccountSettings> Accounts { get; set; } = new();
     /// <summary>분류별 저장 루트 목록. 설정 탭에서 자유롭게 추가/삭제. 첫 항목이 기본 분류.</summary>
     public List<CategoryRoot> CategoryRoots { get; set; } = new();
-    /// <summary>구버전 호환용 — 로드 시 CategoryRoots로 이전됨. 코드에서 직접 사용하지 말 것.</summary>
-    public string NasRoot { get; set; } = "";
+    /// <summary>구버전 호환용 — 로드 시 CategoryRoots로 이전됨. 코드에서 직접 사용하지 말 것.
+    /// JSON 키는 기존 설정 파일 호환을 위해 "NasRoot"를 유지한다 (이름과 달리 아무 디렉토리나 가능).</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("NasRoot")]
+    public string LegacyVideoRoot { get; set; } = "";
     /// <summary>구버전 호환용 — 로드 시 CategoryRoots로 이전됨.</summary>
     public string MangaRoot { get; set; } = "";
     /// <summary>일러스트 분리 저장 루트 (낱장 일러스트 게시물용)</summary>
@@ -73,12 +75,12 @@ public class AppSettings
         return s;
     }
 
-    /// <summary>구버전 NasRoot/MangaRoot 설정을 CategoryRoots로 이전</summary>
+    /// <summary>구버전 영상/만화 고정 루트 설정을 CategoryRoots로 이전</summary>
     private void MigrateLegacyRoots()
     {
         if (CategoryRoots.Count > 0) return;
-        if (!string.IsNullOrWhiteSpace(NasRoot))
-            CategoryRoots.Add(new CategoryRoot { Name = "영상", Path = NasRoot });
+        if (!string.IsNullOrWhiteSpace(LegacyVideoRoot))
+            CategoryRoots.Add(new CategoryRoot { Name = "영상", Path = LegacyVideoRoot });
         if (!string.IsNullOrWhiteSpace(MangaRoot))
             CategoryRoots.Add(new CategoryRoot { Name = "만화", Path = MangaRoot, SplitIllust = SplitIllustrations });
         if (CategoryRoots.Count == 0)
