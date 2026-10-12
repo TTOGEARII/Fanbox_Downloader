@@ -61,12 +61,7 @@
                     <DockPanel DockPanel.Dock="Top" Margin="4,6,4,8">
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                             <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#9A9A9A">분류 필터</TextBlock>
-                            <ComboBox x:Name="CmbFilter" Width="120" SelectionChanged="CmbFilter_SelectionChanged">
-                                <ComboBoxItem IsSelected="True">전체</ComboBoxItem>
-                                <ComboBoxItem>영상</ComboBoxItem>
-                                <ComboBoxItem>만화</ComboBoxItem>
-                                <ComboBoxItem>매칭 안 됨</ComboBoxItem>
-                            </ComboBox>
+                            <ComboBox x:Name="CmbFilter" Width="120" SelectionChanged="CmbFilter_SelectionChanged"/>
                         </StackPanel>
                         <TextBlock Foreground="#9A9A9A" TextWrapping="Wrap" FontSize="12" Margin="0,0,16,0"
                                    Text="매칭 안 된 폴더는 creatorId 칸에 작가 주소(https://xxxx.fanbox.cc의 xxxx)를 입력하세요. 일러 기준(장): 이미지가 이 장수 이하면 일러스트 경로로 저장 — 빈칸=전역 기본, 0=분리 안 함."/>
@@ -120,6 +115,24 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="브라우저 로그인 → F12 → Application → Cookies → fanbox.cc → FANBOXSESSID 값 복사"/>
 
+                        <TextBlock Style="{StaticResource SectionTitle}">저장 분류</TextBlock>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="분류별 저장 루트 폴더를 자유롭게 추가/삭제하세요. 각 루트 바로 아래 하위 폴더가 작가 폴더로 매칭됩니다. 첫 번째 분류가 기본값입니다."/>
+                        <DataGrid x:Name="GridCategories" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
+                                  BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                  RowHeight="30" MaxHeight="220" Margin="0,4,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="분류 이름" Binding="{Binding Name}" Width="110"/>
+                                <DataGridTextColumn Header="저장 루트 경로" Binding="{Binding Path}" Width="*"/>
+                                <DataGridCheckBoxColumn Header="일러 분리" Binding="{Binding SplitIllust, UpdateSourceTrigger=PropertyChanged}" Width="72"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <ui:Button x:Name="BtnAddCategory" Click="BtnAddCategory_Click" Content="분류 추가" Padding="12,4"/>
+                            <ui:Button x:Name="BtnRemoveCategory" Click="BtnRemoveCategory_Click" Content="선택 삭제" Margin="8,0,0,0" Padding="12,4"/>
+                        </StackPanel>
+
                         <TextBlock Style="{StaticResource SectionTitle}">저장</TextBlock>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -127,28 +140,23 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                             </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource FieldLabel}">영상 작가 저장 경로</TextBlock>
-                            <TextBox x:Name="TxtNasRoot" Grid.Column="1" Margin="0,3"/>
-                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">만화 작가 저장 경로</TextBlock>
-                            <TextBox x:Name="TxtMangaRoot" Grid.Row="1" Grid.Column="1" Margin="0,3"
-                                     ToolTip="비우면 영상 경로에 함께 저장됩니다"/>
-                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">일러스트 저장 경로</TextBlock>
-                            <TextBox x:Name="TxtIllustRoot" Grid.Row="2" Grid.Column="1" Margin="0,3"
-                                     ToolTip="만화 작가의 낱장 일러스트 게시물을 분리 저장할 경로"/>
-                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
-                            <TextBox x:Name="TxtTemplate" Grid.Row="3" Grid.Column="1" Margin="0,3"
+                            <TextBlock Style="{StaticResource FieldLabel}">일러스트 저장 경로</TextBlock>
+                            <TextBox x:Name="TxtIllustRoot" Grid.Column="1" Margin="0,3"
+                                     ToolTip="'일러 분리' 체크된 분류 작가의 낱장 일러스트 게시물을 분리 저장할 경로"/>
+                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                            <TextBox x:Name="TxtTemplate" Grid.Row="1" Grid.Column="1" Margin="0,3"
                                      ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
-                            <TextBlock Grid.Row="4" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
-                            <TextBox x:Name="TxtDateFormat" Grid.Row="4" Grid.Column="1" Margin="0,3"/>
-                            <TextBlock Grid.Row="5" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
-                            <TextBox x:Name="TxtParallel" Grid.Row="5" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
+                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                            <TextBox x:Name="TxtDateFormat" Grid.Row="2" Grid.Column="1" Margin="0,3"/>
+                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                            <TextBox x:Name="TxtParallel" Grid.Row="3" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <CheckBox x:Name="ChkSplitIllust" VerticalAlignment="Center">만화 작가의 일러스트 게시물 분리 저장 — 이미지</CheckBox>
+                            <TextBlock VerticalAlignment="Center">일러스트 분리 기준 — 이미지</TextBlock>
                             <TextBox x:Name="TxtIllustMax" Width="44" Margin="6,0" VerticalAlignment="Center"/>
-                            <TextBlock VerticalAlignment="Center">장 이하 + 영상·압축 없음이면 일러스트로 분류</TextBlock>
+                            <TextBlock VerticalAlignment="Center">장 이하 + 영상·압축 없음 ('일러 분리' 체크된 분류에 적용)</TextBlock>
                         </StackPanel>
                         <WrapPanel Margin="0,8,0,0">
                             <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>

@@ -35,21 +35,26 @@ public class SyncEngine
         _saveState = saveState;
     }
 
-    /// <summary>분류에 해당하는 저장 루트 경로</summary>
+    /// <summary>분류에 해당하는 저장 루트 경로. 없으면 경로가 지정된 첫 분류의 루트.</summary>
     public string RootFor(string category)
-        => category == "만화" && !string.IsNullOrWhiteSpace(_settings.MangaRoot)
-            ? _settings.MangaRoot : _settings.NasRoot;
+    {
+        var cat = _settings.FindCategory(category);
+        if (cat != null && !string.IsNullOrWhiteSpace(cat.Path)) return cat.Path;
+        return _settings.CategoryRoots.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Path))?.Path ?? "";
+    }
 
     private IEnumerable<(string Root, string Category)> Roots()
     {
-        if (Directory.Exists(_settings.NasRoot)) yield return (_settings.NasRoot, "영상");
-        if (!string.IsNullOrWhiteSpace(_settings.MangaRoot) && Directory.Exists(_settings.MangaRoot)
-            && !string.Equals(Path.GetFullPath(_settings.MangaRoot), Path.GetFullPath(_settings.NasRoot),
-                StringComparison.OrdinalIgnoreCase))
-            yield return (_settings.MangaRoot, "만화");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cat in _settings.CategoryRoots)
+        {
+            if (string.IsNullOrWhiteSpace(cat.Path) || !Directory.Exists(cat.Path)) continue;
+            if (!seen.Add(Path.GetFullPath(cat.Path))) continue; // 같은 경로를 쓰는 분류는 한 번만 스캔
+            yield return (cat.Path, cat.Name);
+        }
     }
 
-    /// <summary>영상/만화 양쪽 루트의 폴더와 작가 목록을 매칭한다.</summary>
+    /// <summary>모든 분류 루트의 폴더와 작가 목록을 매칭한다.</summary>
     public List<FolderMatch> MatchFolders(List<CreatorInfo> creators)
     {
         var result = new List<FolderMatch>();
@@ -89,7 +94,7 @@ public class SyncEngine
                 StringComparer.OrdinalIgnoreCase);
             foreach (var c in creators.Where(c => !mappedIds.Contains(c.CreatorId)))
             {
-                var category = _settings.CreatorCategories.GetValueOrDefault(c.CreatorId, "영상");
+                var category = _settings.CreatorCategories.GetValueOrDefault(c.CreatorId, _settings.DefaultCategory);
                 result.Add(new FolderMatch(NameSanitizer.Sanitize(c.DisplayName), c.CreatorId, c.DisplayName, category));
             }
         }
@@ -198,11 +203,11 @@ public class SyncEngine
         var items = content.Items.Where(i => _settings.FileTypes.Allows(i.Kind)).ToList();
 
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
-        // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 (만화 작가에만 적용)
+        // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 ('일러 분리' 체크된 분류에만 적용)
         var root = RootFor(m.Category);
         int threshold = _settings.CreatorIllustThresholds.TryGetValue(post.CreatorId, out var t)
             ? t
-            : (_settings.SplitIllustrations && m.Category == "만화" ? _settings.IllustMaxImages : 0);
+            : (_settings.FindCategory(m.Category)?.SplitIllust == true ? _settings.IllustMaxImages : 0);
         if (threshold > 0 && !string.IsNullOrWhiteSpace(_settings.IllustRoot))
         {
             bool hasHeavy = items.Any(i => i.Kind is FileKind.Archive or FileKind.Video);

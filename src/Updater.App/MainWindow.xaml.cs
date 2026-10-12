@@ -22,7 +22,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _syncRunning;
     private bool _suppressRowEvents;
 
-    public string[] Categories { get; } = { "영상", "만화" };
+    /// <summary>작가 그리드의 분류 콤보박스 항목 (설정의 CategoryRoots에서 채움)</summary>
+    public ObservableCollection<string> Categories { get; } = new();
+    private readonly ObservableCollection<CategoryRoot> _categoryRows = new();
 
     public MainWindow()
     {
@@ -30,8 +32,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _settings = AppSettings.Load(App.SettingsPath);
         _state = DownloadState.Load(App.StatePath);
         GridArtists.ItemsSource = _artists;
+        GridCategories.ItemsSource = _categoryRows;
 
         LoadSettingsToUi();
+        RefreshCategoryUi();
         SetupTray();
         LoadArtistsFromCache();
 
@@ -106,10 +110,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         var fanbox = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
         TxtSession.Text = fanbox?.SessionId ?? "";
-        TxtNasRoot.Text = _settings.NasRoot;
-        TxtMangaRoot.Text = _settings.MangaRoot;
+        _categoryRows.Clear();
+        foreach (var c in _settings.CategoryRoots)
+            _categoryRows.Add(new CategoryRoot { Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust });
         TxtIllustRoot.Text = _settings.IllustRoot;
-        ChkSplitIllust.IsChecked = _settings.SplitIllustrations;
         TxtIllustMax.Text = _settings.IllustMaxImages.ToString();
         TxtTemplate.Text = _settings.FolderNameTemplate;
         TxtDateFormat.Text = _settings.DateFormat;
@@ -141,10 +145,26 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _settings.Accounts.Add(fanbox);
         }
         fanbox.SessionId = TxtSession.Text.Trim();
-        _settings.NasRoot = TxtNasRoot.Text.Trim();
-        _settings.MangaRoot = TxtMangaRoot.Text.Trim();
+
+        // 분류 그리드 → 설정 (편집 중인 셀 커밋 후 검증)
+        GridCategories.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
+        var cats = _categoryRows
+            .Select(c => new CategoryRoot { Name = c.Name.Trim(), Path = c.Path.Trim(), SplitIllust = c.SplitIllust })
+            .Where(c => !string.IsNullOrEmpty(c.Name))
+            .ToList();
+        if (cats.Count == 0)
+        {
+            MessageBox.Show("저장 분류를 최소 1개 입력하세요.", "Fanbox Updater");
+            return;
+        }
+        if (cats.Select(c => c.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != cats.Count)
+        {
+            MessageBox.Show("분류 이름이 중복되었습니다.", "Fanbox Updater");
+            return;
+        }
+        _settings.CategoryRoots = cats;
+
         _settings.IllustRoot = TxtIllustRoot.Text.Trim();
-        _settings.SplitIllustrations = ChkSplitIllust.IsChecked == true;
         _settings.IllustMaxImages = int.TryParse(TxtIllustMax.Text, out var im) ? Math.Clamp(im, 1, 50) : 4;
         _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
         _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
@@ -166,22 +186,52 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _settings.CloseToTray = ChkCloseTray.IsChecked == true;
 
         _settings.Save(App.SettingsPath);
+        RefreshCategoryUi();
+        LoadArtistsFromCache();
         UpdateNextRunText();
         TxtStatusBar.Text = "설정을 저장했습니다.";
     }
 
+    /// <summary>분류 콤보박스(작가 그리드·필터)를 설정의 분류 목록으로 갱신</summary>
+    private void RefreshCategoryUi()
+    {
+        Categories.Clear();
+        foreach (var c in _settings.CategoryRoots.Where(c => !string.IsNullOrWhiteSpace(c.Name)))
+            Categories.Add(c.Name);
+
+        var selected = CmbFilter.SelectedItem as string ?? "전체";
+        var items = new List<string> { "전체" };
+        items.AddRange(Categories);
+        items.Add("매칭 안 됨");
+        CmbFilter.ItemsSource = items;
+        CmbFilter.SelectedItem = items.Contains(selected) ? selected : "전체";
+    }
+
+    private void BtnAddCategory_Click(object sender, RoutedEventArgs e)
+        => _categoryRows.Add(new CategoryRoot());
+
+    private void BtnRemoveCategory_Click(object sender, RoutedEventArgs e)
+    {
+        if (GridCategories.SelectedItem is CategoryRoot row) _categoryRows.Remove(row);
+    }
+
     // ---------- 작가 목록 ----------
 
-    /// <summary>영상/만화 양쪽 루트의 폴더 + 수동 매핑 기준으로 그리드를 즉시 채운다 (네트워크 없이).</summary>
+    /// <summary>모든 분류 루트의 폴더 + 수동 매핑 기준으로 그리드를 즉시 채운다 (네트워크 없이).</summary>
     private void LoadArtistsFromCache()
     {
         _suppressRowEvents = true;
         _artists.Clear();
         var roots = new List<(string Root, string Category)>();
-        if (Directory.Exists(_settings.NasRoot)) roots.Add((_settings.NasRoot, "영상"));
-        else TxtStatusBar.Text = $"영상 경로에 접근할 수 없습니다: {_settings.NasRoot}";
-        if (!string.IsNullOrWhiteSpace(_settings.MangaRoot) && Directory.Exists(_settings.MangaRoot))
-            roots.Add((_settings.MangaRoot, "만화"));
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
+        foreach (var cat in _settings.CategoryRoots)
+        {
+            if (string.IsNullOrWhiteSpace(cat.Path)) continue;
+            if (!Directory.Exists(cat.Path)) { missing.Add($"{cat.Name}: {cat.Path}"); continue; }
+            if (!seenPaths.Add(Path.GetFullPath(cat.Path))) continue;
+            roots.Add((cat.Path, cat.Name));
+        }
 
         foreach (var (root, category) in roots)
         foreach (var dir in Directory.GetDirectories(root))
@@ -203,7 +253,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _artists.Add(row);
         }
         _suppressRowEvents = false;
-        TxtStatusBar.Text = $"폴더 {_artists.Count}개. '작가 목록 새로고침'을 누르면 자동 매칭을 실행합니다.";
+        TxtStatusBar.Text = $"폴더 {_artists.Count}개. '작가 목록 새로고침'을 누르면 자동 매칭을 실행합니다."
+            + (missing.Count > 0 ? $"  (접근 불가 경로 — {string.Join(", ", missing)})" : "");
     }
 
     private void HookRow(ArtistRow row)
@@ -228,19 +279,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (!string.IsNullOrEmpty(row.CreatorId))
         {
-            if (row.Category == "만화") _settings.CreatorCategories[row.CreatorId] = "만화";
-            else _settings.CreatorCategories.Remove(row.CreatorId);
+            _settings.CreatorCategories[row.CreatorId] = row.Category;
             _settings.Save(App.SettingsPath);
         }
 
         // 기존 폴더를 새 분류의 루트로 이동할지 묻기
-        var oldRoot = row.Category == "만화" ? _settings.NasRoot : _settings.MangaRoot;
-        var newRoot = row.Category == "만화" ? _settings.MangaRoot : _settings.NasRoot;
-        if (string.IsNullOrWhiteSpace(oldRoot) || string.IsNullOrWhiteSpace(newRoot) ||
-            string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase)) return;
-        var oldPath = Path.Combine(oldRoot, row.FolderName);
+        var newRoot = _settings.FindCategory(row.Category)?.Path;
+        if (string.IsNullOrWhiteSpace(newRoot)) return;
         var newPath = Path.Combine(newRoot, row.FolderName);
-        if (!Directory.Exists(oldPath) || Directory.Exists(newPath)) return;
+        if (Directory.Exists(newPath)) return;
+        // 폴더가 현재 놓여 있는 다른 분류 루트를 찾는다
+        var oldPath = _settings.CategoryRoots
+            .Where(c => !string.IsNullOrWhiteSpace(c.Path)
+                        && !string.Equals(c.Path, newRoot, StringComparison.OrdinalIgnoreCase))
+            .Select(c => Path.Combine(c.Path, row.FolderName))
+            .FirstOrDefault(Directory.Exists);
+        if (oldPath == null) return;
 
         var answer = MessageBox.Show(
             $"'{row.FolderName}' 폴더를 {row.Category} 저장 경로로 이동할까요?\n\n{oldPath}\n→ {newPath}",
@@ -281,14 +335,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void CmbFilter_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (GridArtists == null) return;
-        var filter = (CmbFilter.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString() ?? "전체";
+        var filter = CmbFilter.SelectedItem as string ?? "전체";
         var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
         view.Filter = filter switch
         {
-            "영상" => o => ((ArtistRow)o).Category == "영상",
-            "만화" => o => ((ArtistRow)o).Category == "만화",
+            "전체" => null,
             "매칭 안 됨" => o => string.IsNullOrEmpty(((ArtistRow)o).CreatorId),
-            _ => null,
+            _ => o => ((ArtistRow)o).Category == filter,
         };
     }
 
