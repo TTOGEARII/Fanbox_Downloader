@@ -132,32 +132,38 @@
                             <ui:Button x:Name="BtnAddCategory" Click="BtnAddCategory_Click" Content="분류 추가" Padding="12,4"/>
                             <ui:Button x:Name="BtnRemoveCategory" Click="BtnRemoveCategory_Click" Content="선택 삭제" Margin="8,0,0,0" Padding="12,4"/>
                         </StackPanel>
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="175"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource FieldLabel}">일러스트 저장 경로</TextBlock>
+                            <TextBox x:Name="TxtIllustRoot" Grid.Column="1" Margin="0,3"
+                                     ToolTip="'일러 분리' 체크된 분류 작가의 낱장 일러스트 게시물이 이 경로로 저장됩니다"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock VerticalAlignment="Center">일러 분리 기준 — 이미지</TextBlock>
+                            <TextBox x:Name="TxtIllustMax" Width="44" Margin="6,0" VerticalAlignment="Center"/>
+                            <TextBlock VerticalAlignment="Center">장 이하 + 영상·압축 없음이면 위 경로로 분리 저장</TextBlock>
+                        </StackPanel>
 
-                        <TextBlock Style="{StaticResource SectionTitle}">저장</TextBlock>
+                        <TextBlock Style="{StaticResource SectionTitle}">다운로드</TextBlock>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="175"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                <RowDefinition/><RowDefinition/><RowDefinition/>
                             </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource FieldLabel}">일러스트 저장 경로</TextBlock>
-                            <TextBox x:Name="TxtIllustRoot" Grid.Column="1" Margin="0,3"
-                                     ToolTip="'일러 분리' 체크된 분류 작가의 낱장 일러스트 게시물을 분리 저장할 경로"/>
-                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
-                            <TextBox x:Name="TxtTemplate" Grid.Row="1" Grid.Column="1" Margin="0,3"
+                            <TextBlock Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                            <TextBox x:Name="TxtTemplate" Grid.Column="1" Margin="0,3"
                                      ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
-                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
-                            <TextBox x:Name="TxtDateFormat" Grid.Row="2" Grid.Column="1" Margin="0,3"/>
-                            <TextBlock Grid.Row="3" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
-                            <TextBox x:Name="TxtParallel" Grid.Row="3" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
+                            <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                            <TextBox x:Name="TxtDateFormat" Grid.Row="1" Grid.Column="1" Margin="0,3"/>
+                            <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                            <TextBox x:Name="TxtParallel" Grid.Row="2" Grid.Column="1" Margin="0,3" Width="70" HorizontalAlignment="Left"/>
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBlock VerticalAlignment="Center">일러스트 분리 기준 — 이미지</TextBlock>
-                            <TextBox x:Name="TxtIllustMax" Width="44" Margin="6,0" VerticalAlignment="Center"/>
-                            <TextBlock VerticalAlignment="Center">장 이하 + 영상·압축 없음 ('일러 분리' 체크된 분류에 적용)</TextBlock>
-                        </StackPanel>
                         <WrapPanel Margin="0,8,0,0">
                             <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                             <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
