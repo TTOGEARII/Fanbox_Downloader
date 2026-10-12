@@ -63,6 +63,10 @@ public class UpdateService
                 "%sys%\ping.exe" -n 5 127.0.0.1 >nul
                 "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
                 start "" "{stub}"
+                rem 방금 교체된 스텁이 일시적으로 잠겨 실행이 무시되는 경우가 있어 한 번 재시도
+                "%sys%\ping.exe" -n 7 127.0.0.1 >nul
+                "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
+                start "" "{stub}"
                 :end
                 """);
             Process.Start(new ProcessStartInfo
@@ -71,6 +75,9 @@ public class UpdateService
                 Arguments = $"/c \"{script}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                // 앱의 CWD(…\current)를 물려받으면 감시자가 그 폴더를 잠가
+                // Update.exe의 current 교체를 막아버린다 — 반드시 앱 폴더 밖으로.
+                WorkingDirectory = Path.GetTempPath(),
             });
         }
         catch { /* 감시자 실패는 치명적이지 않음 — 기존 Velopack 재시작 경로는 그대로 시도된다 */ }
