@@ -92,7 +92,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowFromTray);
     }
 
-    private void ShowFromTray()
+    public void ShowFromTray()
     {
         Show();
         WindowState = WindowState.Normal;
@@ -895,7 +895,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 BtnUpdate.Content = $"다운로드 중... {p}%";
                 Progress.Value = p;
                 TxtStatus.Text = p >= 100 ? "업데이트 적용 중 — 곧 재시작합니다" : $"업데이트 다운로드 중... {p}%";
-            })); // 재시작하며 적용
+            }), beforeRestart: () => Dispatcher.Invoke(() => { _tray?.Dispose(); _tray = null; })); // 재시작하며 적용
         }
         catch (Exception ex)
         {

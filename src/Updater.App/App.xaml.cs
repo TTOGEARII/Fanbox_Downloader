@@ -7,6 +7,9 @@ namespace Updater.App;
 
 public partial class App : System.Windows.Application
 {
+    private Mutex? _instanceMutex;
+    private EventWaitHandle? _showSignal;
+
     public static string DataDir { get; private set; } = "";
     public static string SettingsPath => Path.Combine(DataDir, "settings.json");
     public static string StatePath => Path.Combine(DataDir, "state.json");
@@ -44,10 +47,28 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        // 단일 인스턴스: 이미 실행 중이면 기존 창을 앞으로 띄우고 종료
+        _instanceMutex = new Mutex(true, "FanboxUpdater_SingleInstance", out bool isFirstInstance);
+        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "FanboxUpdater_ShowWindow");
+        if (!isFirstInstance)
+        {
+            _showSignal.Set();
+            Shutdown(0);
+            return;
+        }
+
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var win = new MainWindow();
         if (!AppSettings.Load(SettingsPath).StartMinimized)
             win.Show();
+
+        // 두 번째 실행 시도가 보낸 신호를 받아 창을 앞으로
+        var listener = new Thread(() =>
+        {
+            while (_showSignal.WaitOne())
+                Dispatcher.Invoke(win.ShowFromTray);
+        }) { IsBackground = true };
+        listener.Start();
     }
 
     /// <summary>
