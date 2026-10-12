@@ -237,10 +237,25 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         GridCategories.ScrollIntoView(row);
     }
 
+    private void ChkAllCategories_Click(object sender, RoutedEventArgs e)
+    {
+        var isChecked = ((System.Windows.Controls.CheckBox)sender).IsChecked == true;
+        foreach (var row in _categoryRows) row.Selected = isChecked;
+    }
+
     private void BtnRemoveCategory_Click(object sender, RoutedEventArgs e)
     {
-        if (GridCategories.SelectedItem is CategoryRow row) _categoryRows.Remove(row);
+        var targets = _categoryRows.Where(r => r.Selected).ToList();
+        // 체크된 분류가 없으면 그리드에서 선택(하이라이트)된 줄을 삭제
+        if (targets.Count == 0 && GridCategories.SelectedItem is CategoryRow cur) targets.Add(cur);
+        if (targets.Count == 0)
+        {
+            TxtStatusBar.Text = "삭제할 분류를 체크하거나 선택하세요.";
+            return;
+        }
+        foreach (var row in targets) _categoryRows.Remove(row);
         RefreshCategoryUi();
+        TxtStatusBar.Text = $"분류 {targets.Count}개를 목록에서 제거했습니다 — '설정 저장'을 눌러야 적용됩니다.";
     }
 
     private void BtnBrowseCategory_Click(object sender, RoutedEventArgs e)

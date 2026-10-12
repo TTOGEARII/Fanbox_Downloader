@@ -6,10 +6,13 @@ namespace Updater.App;
 /// <summary>설정 탭 저장 분류 그리드 한 줄 (편집용 — 저장 시 CategoryRoot로 변환)</summary>
 public class CategoryRow : INotifyPropertyChanged
 {
+    private bool _selected;
     private string _name = "";
     private string _path = "";
     private bool _splitIllust;
 
+    /// <summary>삭제 등 일괄 작업용 선택 체크 (저장되지 않음)</summary>
+    public bool Selected { get => _selected; set => Set(ref _selected, value); }
     public string Name { get => _name; set => Set(ref _name, value); }
     public string Path { get => _path; set => Set(ref _path, value); }
     public bool SplitIllust { get => _splitIllust; set => Set(ref _splitIllust, value); }
