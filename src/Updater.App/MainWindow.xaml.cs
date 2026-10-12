@@ -143,6 +143,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ChkAutoCreate.IsChecked = _settings.AutoCreateFolders;
         ChkPaidOnly.IsChecked = _settings.PaidPostsOnly;
         ChkExternal.IsChecked = _settings.DownloadExternalLinks;
+        ChkAutoExtract.IsChecked = _settings.AutoExtractArchives;
+        ChkDeleteArchive.IsChecked = _settings.DeleteArchiveAfterExtract;
         ChkImages.IsChecked = _settings.FileTypes.Images;
         ChkVideos.IsChecked = _settings.FileTypes.Videos;
         ChkArchives.IsChecked = _settings.FileTypes.Archives;
@@ -194,6 +196,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _settings.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
         _settings.PaidPostsOnly = ChkPaidOnly.IsChecked == true;
         _settings.DownloadExternalLinks = ChkExternal.IsChecked == true;
+        _settings.AutoExtractArchives = ChkAutoExtract.IsChecked == true;
+        _settings.DeleteArchiveAfterExtract = ChkDeleteArchive.IsChecked == true;
         _settings.FileTypes.Images = ChkImages.IsChecked == true;
         _settings.FileTypes.Videos = ChkVideos.IsChecked == true;
         _settings.FileTypes.Archives = ChkArchives.IsChecked == true;

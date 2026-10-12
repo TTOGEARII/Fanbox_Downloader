@@ -22,6 +22,10 @@ public class AppSettings
 
     /// <summary>본문의 외부 링크(Dropbox/Google Drive/직접 링크)를 자동 다운로드</summary>
     public bool DownloadExternalLinks { get; set; } = true;
+    /// <summary>받은 압축파일(zip)을 게시물 폴더 안에 자동으로 풀기</summary>
+    public bool AutoExtractArchives { get; set; } = false;
+    /// <summary>압축 해제 성공 후 원본 압축파일 삭제</summary>
+    public bool DeleteArchiveAfterExtract { get; set; } = false;
     public int RequestDelayMs { get; set; } = 1000;
     public int MaxParallelDownloads { get; set; } = 3;
 

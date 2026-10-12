@@ -238,6 +238,9 @@ public class SyncEngine
         }).ToList();
         await Task.WhenAll(tasks);
 
+        if (_settings.AutoExtractArchives)
+            ExtractArchives(items, postDir);
+
         // 외부 링크 처리: 링크 카드 해석 → 지원 호스트는 자동 다운로드
         var externalNotes = new List<string>();
         foreach (var link in content.ExternalLinks)
@@ -274,6 +277,51 @@ public class SyncEngine
         if (!Directory.EnumerateFileSystemEntries(postDir).Any())
             Directory.Delete(postDir); // 받을 것이 없던 게시물 — 빈 폴더 정리
         return true;
+    }
+
+    /// <summary>zip 파일명 인코딩 — UTF-8 플래그가 없는 일본어 zip은 Shift-JIS(cp932)로 해석</summary>
+    private static readonly System.Text.Encoding ZipNameEncoding = GetZipNameEncoding();
+    private static System.Text.Encoding GetZipNameEncoding()
+    {
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            return System.Text.Encoding.GetEncoding(932);
+        }
+        catch { return System.Text.Encoding.UTF8; }
+    }
+
+    /// <summary>받은 zip을 게시물 폴더 안에 압축파일명과 같은 하위 폴더로 푼다. RAR·7z는 미지원.</summary>
+    private void ExtractArchives(List<DownloadItem> items, string postDir)
+    {
+        foreach (var item in items.Where(i => i.Kind == FileKind.Archive))
+        {
+            var archPath = Path.Combine(postDir, NameSanitizer.Sanitize(item.FileName));
+            if (!File.Exists(archPath)) continue;
+            if (!archPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                Log?.Invoke($"  [압축] {item.FileName}: zip만 자동 해제를 지원합니다");
+                continue;
+            }
+            var extractDir = Path.Combine(postDir, Path.GetFileNameWithoutExtension(archPath));
+            if (Directory.Exists(extractDir)) continue; // 이미 푼 적 있음
+            try
+            {
+                Log?.Invoke($"  [압축 해제] {item.FileName}");
+                System.IO.Compression.ZipFile.ExtractToDirectory(archPath, extractDir, ZipNameEncoding, overwriteFiles: true);
+                if (_settings.DeleteArchiveAfterExtract) File.Delete(archPath);
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"  [압축 해제 실패] {item.FileName}: {ex.Message} — 원본은 그대로 둡니다");
+                try
+                {
+                    if (Directory.Exists(extractDir) && !Directory.EnumerateFileSystemEntries(extractDir).Any())
+                        Directory.Delete(extractDir);
+                }
+                catch { }
+            }
+        }
     }
 
     private static string Normalize(string s)
