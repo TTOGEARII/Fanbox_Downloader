@@ -869,16 +869,25 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
         BtnUpdate.IsEnabled = false;
-        BtnUpdate.Content = "다운로드 중...";
+        BtnUpdate.Content = "다운로드 중... 0%";
+        Progress.Value = 0;
+        TxtStatus.Text = "업데이트 다운로드 중...";
         try
         {
             _reallyExit = true;
-            await _updater.DownloadAndApplyAsync(_pendingUpdate); // 재시작하며 적용
+            await _updater.DownloadAndApplyAsync(_pendingUpdate, p => Dispatcher.BeginInvoke(() =>
+            {
+                BtnUpdate.Content = $"다운로드 중... {p}%";
+                Progress.Value = p;
+                TxtStatus.Text = p >= 100 ? "업데이트 적용 중 — 곧 재시작합니다" : $"업데이트 다운로드 중... {p}%";
+            })); // 재시작하며 적용
         }
         catch (Exception ex)
         {
             BtnUpdate.IsEnabled = true;
             BtnUpdate.Content = "업데이트";
+            Progress.Value = 0;
+            TxtStatus.Text = "대기 중";
             _reallyExit = false;
             MessageBox.Show($"업데이트 실패: {ex.Message}", "Fanbox Updater");
         }

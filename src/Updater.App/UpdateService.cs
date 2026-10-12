@@ -23,10 +23,10 @@ public class UpdateService
         return await _manager.CheckForUpdatesAsync();
     }
 
-    /// <summary>업데이트 다운로드 후 재시작하며 적용</summary>
-    public async Task DownloadAndApplyAsync(UpdateInfo info)
+    /// <summary>업데이트 다운로드 후 재시작하며 적용. progress는 0~100(%).</summary>
+    public async Task DownloadAndApplyAsync(UpdateInfo info, Action<int>? progress = null)
     {
-        await _manager.DownloadUpdatesAsync(info);
+        await _manager.DownloadUpdatesAsync(info, progress);
         _manager.ApplyUpdatesAndRestart(info);
     }
 }
