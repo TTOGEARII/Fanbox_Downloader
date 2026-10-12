@@ -60,16 +60,24 @@
                 <DockPanel Margin="4">
                     <DockPanel DockPanel.Dock="Top" Margin="4,6,4,8">
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                            <ui:TextBox x:Name="TxtSearch" Width="210" Margin="0,0,12,0" FontSize="12"
+                                        PlaceholderText="폴더명·작가명·ID 검색" TextChanged="TxtSearch_TextChanged"/>
                             <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#9A9A9A">분류 필터</TextBlock>
                             <ComboBox x:Name="CmbFilter" Width="120" SelectionChanged="CmbFilter_SelectionChanged"/>
                         </StackPanel>
-                        <TextBlock Foreground="#9A9A9A" TextWrapping="Wrap" FontSize="12" Margin="0,0,16,0"
-                                   Text="매칭 안 된 폴더는 creatorId 칸에 작가 주소(https://xxxx.fanbox.cc의 xxxx)를 입력하세요. 일러 기준(장): 이미지가 이 장수 이하면 일러스트 경로로 저장 — 빈칸=전역 기본, 0=분리 안 함."/>
+                        <TextBlock Foreground="#9A9A9A" TextWrapping="Wrap" FontSize="12" Margin="0,4,16,0"
+                                   Text="매칭 안 된 폴더는 [선택] 버튼이나 creatorId 입력으로 작가와 연결하세요. 행 우클릭 → 폴더/FANBOX 페이지 열기."/>
                     </DockPanel>
                     <DataGrid x:Name="GridArtists" AutoGenerateColumns="False" CanUserAddRows="False"
                               CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
                               BorderThickness="0" RowHeight="34"
                               CellEditEnding="GridArtists_CellEditEnding">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="폴더 열기" Click="MenuOpenFolder_Click"/>
+                                <MenuItem Header="FANBOX 페이지 열기" Click="MenuOpenFanbox_Click"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="92">
                                 <DataGridCheckBoxColumn.Header>
@@ -98,7 +106,27 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="일러 기준(장)" Binding="{Binding IllustThreshold}" Width="90"/>
-                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" IsReadOnly="True" Width="85"/>
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" IsReadOnly="True" Width="85">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Status}" Value="매칭 안 됨">
+                                                <Setter Property="Foreground" Value="#FF9472"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="미확인">
+                                                <Setter Property="Foreground" Value="#9A9A9A"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="자동 매칭">
+                                                <Setter Property="Foreground" Value="#6CCB5F"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Status}" Value="수동 매핑">
+                                                <Setter Property="Foreground" Value="#60CDFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="받은 게시물" Binding="{Binding DownloadedCount}" IsReadOnly="True" Width="85"/>
                             <DataGridTextColumn Header="최근 결과" Binding="{Binding LastResult}" IsReadOnly="True" Width="*"/>
                         </DataGrid.Columns>

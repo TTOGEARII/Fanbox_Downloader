@@ -383,16 +383,59 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     private void CmbFilter_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        => ApplyArtistFilter();
+
+    private void TxtSearch_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        => ApplyArtistFilter();
+
+    /// <summary>분류 필터 + 검색어를 함께 적용</summary>
+    private void ApplyArtistFilter()
     {
-        if (GridArtists == null) return;
-        var filter = CmbFilter.SelectedItem as string ?? "전체";
+        if (GridArtists == null || CmbFilter == null || TxtSearch == null) return;
+        var cat = CmbFilter.SelectedItem as string ?? "전체";
+        var q = TxtSearch.Text.Trim();
         var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
-        view.Filter = filter switch
+        if (cat == "전체" && q.Length == 0) { view.Filter = null; return; }
+        view.Filter = o =>
         {
-            "전체" => null,
-            "매칭 안 됨" => o => string.IsNullOrEmpty(((ArtistRow)o).CreatorId),
-            _ => o => ((ArtistRow)o).Category == filter,
+            var r = (ArtistRow)o;
+            bool catOk = cat switch
+            {
+                "전체" => true,
+                "매칭 안 됨" => string.IsNullOrEmpty(r.CreatorId),
+                _ => r.Category == cat,
+            };
+            if (!catOk) return false;
+            return q.Length == 0
+                || r.FolderName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || r.CreatorName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || r.CreatorId.Contains(q, StringComparison.OrdinalIgnoreCase);
         };
+        TxtStatusBar.Text = $"표시 {view.Cast<object>().Count()} / 전체 {_artists.Count}";
+    }
+
+    private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (GridArtists.SelectedItem is not ArtistRow row) return;
+        var root = new SyncEngine(_settings, _state, SaveState).RootFor(row.Category);
+        var path = string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, row.FolderName);
+        if (path == null || !Directory.Exists(path))
+        {
+            TxtStatusBar.Text = $"폴더를 찾을 수 없습니다: {path ?? row.FolderName}";
+            return;
+        }
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    private void MenuOpenFanbox_Click(object sender, RoutedEventArgs e)
+    {
+        if (GridArtists.SelectedItem is not ArtistRow row || string.IsNullOrEmpty(row.CreatorId))
+        {
+            TxtStatusBar.Text = "매칭된 작가가 아닙니다 — 먼저 매핑하세요.";
+            return;
+        }
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            $"https://{row.CreatorId}.fanbox.cc") { UseShellExecute = true });
     }
 
     private void GridArtists_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
@@ -673,6 +716,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _syncRunning = true;
         _syncCts = new CancellationTokenSource();
         BtnSync.IsEnabled = false;
+        BtnRefresh.IsEnabled = false;
+        BtnRedownload.IsEnabled = false;
         BtnStop.IsEnabled = true;
         Progress.Value = 0;
         TxtStatus.Text = "동기화 시작...";
@@ -729,6 +774,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             _syncRunning = false;
             BtnSync.IsEnabled = true;
+            BtnRefresh.IsEnabled = true;
+            BtnRedownload.IsEnabled = true;
             BtnStop.IsEnabled = false;
             _syncCts?.Dispose();
             _syncCts = null;
