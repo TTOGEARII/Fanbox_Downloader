@@ -331,7 +331,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     ? cachedName : "",
                 Status = string.IsNullOrEmpty(mapped) ? "미확인" : (manual ? "수동 매핑" : "자동 매칭"),
                 DownloadedCount = string.IsNullOrEmpty(mapped) ? 0 : _state.CountFor(mapped),
-                Enabled = string.IsNullOrEmpty(mapped) || !_settings.DisabledCreators.Contains(mapped),
+                // 동기화 체크 기본값: 매핑된 작가만 켠다 (미매핑 폴더는 동기화 대상이 아니므로)
+                Enabled = !string.IsNullOrEmpty(mapped) && !_settings.DisabledCreators.Contains(mapped),
                 IllustThreshold = mapped != null && _settings.CreatorIllustThresholds.TryGetValue(mapped, out var th)
                     ? th.ToString() : "",
             };
@@ -671,7 +672,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                    ?? _artists.FirstOrDefault(r => r.FolderName == m.FolderName);
             if (row == null)
             {
-                row = new ArtistRow { FolderName = m.FolderName, Category = m.Category };
+                // 동기화 체크 기본값: 매핑되기 전에는 꺼둔다 (매핑되면 아래에서 켜짐)
+                row = new ArtistRow { FolderName = m.FolderName, Category = m.Category, Enabled = false };
                 HookRow(row);
                 _artists.Add(row);
             }
