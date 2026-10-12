@@ -61,12 +61,13 @@ public class UpdateService
                 )
                 :applied
                 "%sys%\ping.exe" -n 5 127.0.0.1 >nul
-                "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
-                start "" "{stub}"
-                rem 방금 교체된 스텁이 일시적으로 잠겨 실행이 무시되는 경우가 있어 한 번 재시도
-                "%sys%\ping.exe" -n 7 127.0.0.1 >nul
-                "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
-                start "" "{stub}"
+                rem 교체 직후 실행 파일이 수십 초간 잠기는 경우(백신 스캔 등)가 있어
+                rem 앱이 뜰 때까지 10초 간격으로 최대 2분간 재시도한다.
+                for /l %%j in (1,1,12) do (
+                  "%sys%\tasklist.exe" /fi "imagename eq FanboxUpdater.exe" | "%sys%\find.exe" /i "FanboxUpdater.exe" >nul && goto end
+                  start "" "{stub}"
+                  "%sys%\ping.exe" -n 11 127.0.0.1 >nul
+                )
                 :end
                 """);
             Process.Start(new ProcessStartInfo
