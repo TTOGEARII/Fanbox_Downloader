@@ -30,16 +30,38 @@ public class UpdateService
     /// beforeRestart: 재시작 직전 정리 작업 (트레이 아이콘 해제 등 — 안 하면 유령 아이콘이 남는다).</summary>
     public async Task DownloadAndApplyAsync(UpdateInfo info, Action<int>? progress = null, Action? beforeRestart = null)
     {
+        Log("DownloadUpdatesAsync 시작");
         await _manager.DownloadUpdatesAsync(info, progress);
+        Log("다운로드 완료");
         await PrewarmAntivirusScanAsync(info);
+
         beforeRestart?.Invoke();
         var version = info.TargetFullRelease.Version.ToString();
         StartRestartWatchdog(version);
         StartApplySplash(version);
-        // Velopack 기본 적용 다이얼로그는 이미지 커스텀이 불가능해(--splashImage는 Setup.exe 전용)
-        // silent로 적용하고, 그동안 위에서 띄운 자체 스플래시 창을 보여준다.
-        _manager.WaitExitThenApplyUpdates(info.TargetFullRelease, silent: true, restart: true);
-        Environment.Exit(0);
+
+        // Velopack 공식 권장 경로: ApplyUpdatesAndRestart가 Update.exe를 띄워 적용하고
+        // 현재 프로세스를 종료·재시작한다 (내부에서 Exit 처리).
+        // WaitExitThenApplyUpdates(silent) + 수동 Exit 조합은 Velopack 1.x에서 적용이 아예 시작되지 않는다
+        // (앱은 살아 있고 파일 교체만 안 됨 — NekoManga v0.3.0에서 실제 발생·검증).
+        // 기본 적용 다이얼로그 대신 위에서 띄운 자체 스플래시가 보인다.
+        Log("ApplyUpdatesAndRestart 호출");
+        _manager.ApplyUpdatesAndRestart(info.TargetFullRelease);
+        Log("ApplyUpdatesAndRestart 반환(비정상 — 보통 여기 도달 전 종료)");
+    }
+
+    /// <summary>업데이트 단계 진단 로그 (%AppData%\FanboxUpdater\update.log).</summary>
+    private static void Log(string msg)
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "FanboxUpdater", "update.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     /// <summary>--demo-splash 실행 인자용: 적용 스플래시를 10초간 미리 본다.</summary>
