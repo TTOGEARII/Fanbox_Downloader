@@ -25,8 +25,7 @@ public partial class App : System.Windows.Application
         if (e.Args.Length >= 2 && e.Args[0] == "--debug-post")
         {
             // 원시 post.info 응답을 debug_post.json으로 저장 (파싱 문제 진단용)
-            var settings = AppSettings.Load(SettingsPath);
-            var account = settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
+            var account = AppSettings.Load(SettingsPath).GetAccount(AppSettings.FanboxProvider);
             if (account != null)
             {
                 using var browser = new Updater.Providers.Fanbox.BrowserClient(account.SessionId, WebViewDataDir);
@@ -47,14 +46,18 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        // 단일 인스턴스: 이미 실행 중이면 기존 창을 앞으로 띄우고 종료
-        _instanceMutex = new Mutex(true, "FanboxUpdater_SingleInstance", out bool isFirstInstance);
-        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "FanboxUpdater_ShowWindow");
-        if (!isFirstInstance)
+        // 단일 인스턴스: 이미 실행 중이면 기존 창을 앞으로 띄우고 종료.
+        // --multi 는 개발용 — 설치본이 트레이에 떠 있어도 개발 빌드를 따로 띄울 수 있다.
+        if (!e.Args.Contains("--multi"))
         {
-            _showSignal.Set();
-            Shutdown(0);
-            return;
+            _instanceMutex = new Mutex(true, "FanboxUpdater_SingleInstance", out bool isFirstInstance);
+            _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "FanboxUpdater_ShowWindow");
+            if (!isFirstInstance)
+            {
+                _showSignal.Set();
+                Shutdown(0);
+                return;
+            }
         }
 
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -62,13 +65,17 @@ public partial class App : System.Windows.Application
         if (!AppSettings.Load(SettingsPath).StartMinimized)
             win.Show();
 
-        // 두 번째 실행 시도가 보낸 신호를 받아 창을 앞으로
-        var listener = new Thread(() =>
+        if (_showSignal != null)
         {
-            while (_showSignal.WaitOne())
-                Dispatcher.Invoke(win.ShowFromTray);
-        }) { IsBackground = true };
-        listener.Start();
+            // 두 번째 실행 시도가 보낸 신호를 받아 창을 앞으로
+            var signal = _showSignal;
+            var listener = new Thread(() =>
+            {
+                while (signal.WaitOne())
+                    Dispatcher.Invoke(win.ShowFromTray);
+            }) { IsBackground = true };
+            listener.Start();
+        }
     }
 
     /// <summary>
@@ -109,7 +116,7 @@ public partial class App : System.Windows.Application
                 DownloadCoverImage = root.TryGetProperty("DownloadCoverImage", out var dc) && dc.GetBoolean(),
             };
             var session = root.TryGetProperty("FanboxSessionId", out var fs) ? fs.GetString() ?? "" : "";
-            settings.Accounts.Add(new AccountSettings { Provider = "fanbox", SessionId = session });
+            settings.Accounts.Add(new AccountSettings { Provider = AppSettings.FanboxProvider, SessionId = session });
 
             var mappingPath = Path.Combine(DataDir, "mapping.json");
             if (File.Exists(mappingPath))
@@ -128,7 +135,7 @@ public partial class App : System.Windows.Application
 
     private static async Task RunHeadlessAsync()
     {
-        var log = new StreamWriter(LogPath, append: true) { AutoFlush = true };
+        using var log = new StreamWriter(LogPath, append: true) { AutoFlush = true };
         void WriteLog(string msg) => log.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}");
         try
         {
@@ -151,6 +158,5 @@ public partial class App : System.Windows.Application
         {
             WriteLog($"[오류] {ex.Message}");
         }
-        finally { log.Dispose(); }
     }
 }

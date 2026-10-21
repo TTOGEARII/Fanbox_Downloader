@@ -8,13 +8,13 @@ namespace Updater.App;
 /// </summary>
 public static class ProviderRegistry
 {
-    public static readonly string[] SupportedProviders = { "fanbox" };
+    public static readonly string[] SupportedProviders = { AppSettings.FanboxProvider };
 
     public static ISiteProvider? Create(AccountSettings account, AppSettings settings, string webViewDataDir)
     {
         return account.Provider.ToLowerInvariant() switch
         {
-            "fanbox" when !string.IsNullOrWhiteSpace(account.SessionId)
+            AppSettings.FanboxProvider when !string.IsNullOrWhiteSpace(account.SessionId)
                 => new FanboxProvider(account.SessionId, settings.RequestDelayMs, webViewDataDir),
             _ => null,
         };

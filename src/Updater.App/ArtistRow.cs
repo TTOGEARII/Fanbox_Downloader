@@ -3,8 +3,24 @@ using System.Runtime.CompilerServices;
 
 namespace Updater.App;
 
+/// <summary>INotifyPropertyChanged 공통 구현</summary>
+public abstract class ObservableRow : INotifyPropertyChanged
+{
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        Raise(name);
+        return true;
+    }
+
+    protected void Raise(string? name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
 /// <summary>설정 탭 저장 분류 그리드 한 줄 (편집용 — 저장 시 CategoryRoot로 변환)</summary>
-public class CategoryRow : INotifyPropertyChanged
+public class CategoryRow : ObservableRow
 {
     private bool _selected;
     private string _name = "";
@@ -16,27 +32,31 @@ public class CategoryRow : INotifyPropertyChanged
     public string Name { get => _name; set => Set(ref _name, value); }
     public string Path { get => _path; set => Set(ref _path, value); }
     public bool SplitIllust { get => _splitIllust; set => Set(ref _splitIllust, value); }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
 }
 
-public class ArtistRow : INotifyPropertyChanged
+/// <summary>폴더 ↔ 작가 매칭 상태</summary>
+public enum MatchStatus
+{
+    /// <summary>아직 작가 목록과 대조하지 않음 (시작 직후, 캐시에 없음)</summary>
+    Unknown,
+    /// <summary>작가 목록과 대조했지만 일치하는 작가가 없음</summary>
+    Unmatched,
+    /// <summary>이름/ID로 자동 매칭됨</summary>
+    Auto,
+    /// <summary>사용자가 직접 매핑함</summary>
+    Manual,
+}
+
+public class ArtistRow : ObservableRow
 {
     private bool _enabled = true;
     private string _folderName = "";
     private string _creatorId = "";
     private string _creatorName = "";
-    private string _status = "";
+    private MatchStatus _status;
     private int _downloadedCount;
     private string _lastResult = "";
-    private string _category = "영상";
+    private string _category = "";
     private string _illustThreshold = "";
 
     public string Category { get => _category; set => Set(ref _category, value); }
@@ -48,23 +68,25 @@ public class ArtistRow : INotifyPropertyChanged
     public string CreatorId
     {
         get => _creatorId;
-        set { if (Set(ref _creatorId, value)) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMapped))); }
+        set { if (Set(ref _creatorId, value)) Raise(nameof(IsMapped)); }
     }
     public string CreatorName { get => _creatorName; set => Set(ref _creatorName, value); }
-    public string Status { get => _status; set => Set(ref _status, value); }
+    public MatchStatus Status
+    {
+        get => _status;
+        set { if (Set(ref _status, value)) Raise(nameof(StatusText)); }
+    }
     public int DownloadedCount { get => _downloadedCount; set => Set(ref _downloadedCount, value); }
     public string LastResult { get => _lastResult; set => Set(ref _lastResult, value); }
 
     /// <summary>creatorId가 연결되어 있는지 — 작가 그리드의 매핑 표시용</summary>
     public bool IsMapped => !string.IsNullOrEmpty(_creatorId);
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    public string StatusText => _status switch
     {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        return true;
-    }
+        MatchStatus.Manual => "수동 매핑",
+        MatchStatus.Auto => "자동 매칭",
+        MatchStatus.Unmatched => "매칭 안 됨",
+        _ => "미확인",
+    };
 }

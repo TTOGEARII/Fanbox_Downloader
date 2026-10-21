@@ -15,8 +15,10 @@ public interface ISiteProvider : IDisposable
     /// <summary>팔로우/후원 중인 작가 전체 목록</summary>
     Task<List<CreatorInfo>> GetFollowedCreatorsAsync(CancellationToken ct);
 
-    /// <summary>작가의 게시물 목록 (최신순)</summary>
-    Task<List<RemotePost>> GetPostsAsync(string creatorId, CancellationToken ct);
+    /// <summary>작가의 게시물 목록 (최신순).</summary>
+    /// <param name="isSettled">게시물이 더 처리할 것이 없는지(이미 받았거나 받을 필요 없음) 판정.
+    /// 지정하면 한 페이지의 게시물이 전부 settled일 때 더 오래된 페이지 조회를 중단해도 된다 (API 호출 절약).</param>
+    Task<List<RemotePost>> GetPostsAsync(string creatorId, CancellationToken ct, Func<RemotePost, bool>? isSettled = null);
 
     /// <summary>게시물 상세 내용. 열람 불가하면 null.</summary>
     Task<PostContent?> GetPostContentAsync(RemotePost post, CancellationToken ct);

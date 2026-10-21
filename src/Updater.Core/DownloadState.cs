@@ -7,6 +7,10 @@ public class DownloadState
 {
     public Dictionary<string, HashSet<string>> Downloaded { get; set; } = new();
 
+    /// <summary>마지막 동기화에서 오류·중지 없이 게시물 목록 끝까지 처리한 작가.
+    /// 이 작가는 다음 동기화 때 최신 페이지가 전부 처리된 상태면 더 오래된 페이지 조회를 생략한다.</summary>
+    public HashSet<string> CompletedCreators { get; set; } = new();
+
     public bool Contains(string creatorId, string postId)
         => Downloaded.TryGetValue(creatorId, out var set) && set.Contains(postId);
 
@@ -20,6 +24,14 @@ public class DownloadState
     public int CountFor(string creatorId)
         => Downloaded.TryGetValue(creatorId, out var set) ? set.Count : 0;
 
+    public bool IsComplete(string creatorId) => CompletedCreators.Contains(creatorId);
+
+    public void SetComplete(string creatorId, bool complete)
+    {
+        if (complete) CompletedCreators.Add(creatorId);
+        else CompletedCreators.Remove(creatorId);
+    }
+
     public static DownloadState Load(string path)
     {
         if (!File.Exists(path)) return new DownloadState();
@@ -27,5 +39,5 @@ public class DownloadState
     }
 
     public void Save(string path)
-        => File.WriteAllText(path, JsonSerializer.Serialize(this, JsonDefaults.Options));
+        => JsonDefaults.WriteAtomic(path, JsonSerializer.Serialize(this, JsonDefaults.Options));
 }

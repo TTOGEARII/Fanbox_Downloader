@@ -35,32 +35,15 @@ public class SyncEngine
         _saveState = saveState;
     }
 
-    /// <summary>분류에 해당하는 저장 루트 경로. 없으면 경로가 지정된 첫 분류의 루트.</summary>
-    public string RootFor(string category)
-    {
-        var cat = _settings.FindCategory(category);
-        if (cat != null && !string.IsNullOrWhiteSpace(cat.Path)) return cat.Path;
-        return _settings.CategoryRoots.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Path))?.Path ?? "";
-    }
-
-    private IEnumerable<(string Root, string Category)> Roots()
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var cat in _settings.CategoryRoots)
-        {
-            if (string.IsNullOrWhiteSpace(cat.Path) || !Directory.Exists(cat.Path)) continue;
-            if (!seen.Add(Path.GetFullPath(cat.Path))) continue; // 같은 경로를 쓰는 분류는 한 번만 스캔
-            yield return (cat.Path, cat.Name);
-        }
-    }
-
     /// <summary>모든 분류 루트의 폴더와 작가 목록을 매칭한다.</summary>
     public List<FolderMatch> MatchFolders(List<CreatorInfo> creators)
     {
         var result = new List<FolderMatch>();
         var byId = creators.ToDictionary(c => c.CreatorId, StringComparer.OrdinalIgnoreCase);
+        // 정규화 키는 작가당 한 번만 계산 (폴더 수 × 작가 수만큼 반복하지 않게)
+        var keyed = creators.Select(c => (Creator: c, Id: Normalize(c.CreatorId), Name: Normalize(c.DisplayName))).ToList();
 
-        foreach (var (root, category) in Roots())
+        foreach (var (root, category) in _settings.ExistingRoots())
         foreach (var dir in Directory.GetDirectories(root))
         {
             var folder = Path.GetFileName(dir);
@@ -73,19 +56,15 @@ public class SyncEngine
             }
             // 2순위: 이름/아이디 자동 매칭 (완전 일치 우선, 부분 일치는 4자 이상일 때만)
             var key = Normalize(folder);
-            static bool SafeContains(string a, string b)
-                => b.Length >= 4 && a.Contains(b);
-            var hit = creators.FirstOrDefault(c =>
-                    Normalize(c.CreatorId) == key || Normalize(c.DisplayName) == key)
-                ?? creators.FirstOrDefault(c =>
-                    SafeContains(Normalize(c.CreatorId), key) || SafeContains(Normalize(c.DisplayName), key) ||
-                    SafeContains(key, Normalize(c.CreatorId)) || SafeContains(key, Normalize(c.DisplayName)));
+            var hit = keyed.FirstOrDefault(k => k.Id == key || k.Name == key).Creator
+                   ?? keyed.FirstOrDefault(k =>
+                          SafeContains(k.Id, key) || SafeContains(k.Name, key) ||
+                          SafeContains(key, k.Id) || SafeContains(key, k.Name)).Creator;
             result.Add(hit != null
                 ? new FolderMatch(folder, hit.CreatorId, hit.DisplayName, category)
                 : new FolderMatch(folder, null, null, category));
         }
 
-        // 같은 작가가 양쪽 루트에 있으면 수동 분류(CreatorCategories)와 일치하는 쪽 우선
         // 옵션: 폴더가 없는 팔로우 작가도 자동으로 폴더를 만들어 대상에 포함
         if (_settings.AutoCreateFolders)
         {
@@ -100,6 +79,8 @@ public class SyncEngine
         }
         return result;
     }
+
+    private static bool SafeContains(string a, string b) => b.Length >= 4 && a.Contains(b);
 
     /// <param name="reDownloadSince">creatorId → 날짜: 이 날짜 이후 게시물은 받은 기록이 있어도 다시 받음</param>
     /// <param name="onlyCreators">지정하면 해당 creatorId만 동기화</param>
@@ -128,21 +109,30 @@ public class SyncEngine
         foreach (var m in targets)
         {
             ct.ThrowIfCancellationRequested();
-            CreatorProgress?.Invoke(m.CreatorId!, done, targets.Count);
-            Log?.Invoke($"▶ {m.FolderName} (creatorId: {m.CreatorId}, 작가명: {m.CreatorName})");
-            int newCount = 0;
+            var creatorId = m.CreatorId!;
+            CreatorProgress?.Invoke(creatorId, done, targets.Count);
+            Log?.Invoke($"▶ {m.FolderName} (creatorId: {creatorId}, 작가명: {m.CreatorName})");
+
+            DateTime? since = reDownloadSince != null && reDownloadSince.TryGetValue(creatorId, out var s) ? s : null;
+            // 더 처리할 것이 없는 게시물 판정. 지난 동기화를 끝까지 마친 작가는 최신 페이지가 전부 이 상태면
+            // 더 오래된 페이지를 조회하지 않는다 (작가당 수십 번의 API 호출을 1~2번으로 줄임).
+            // '다시 받기' 중이거나 지난번에 중단·오류가 있었으면 전체 페이지를 다시 훑는다.
+            bool IsSettled(RemotePost p) =>
+                !p.IsAccessible || (_settings.PaidPostsOnly && p.FeeRequired <= 0) || _state.Contains(creatorId, p.PostId);
+            var canStopEarly = since == null && _state.IsComplete(creatorId);
+
+            int newCount = 0, errorsBefore = summary.Errors;
+            bool finished = false;
             try
             {
-                var posts = await provider.GetPostsAsync(m.CreatorId!, ct);
+                var posts = await provider.GetPostsAsync(creatorId, ct, canStopEarly ? IsSettled : null);
 
                 foreach (var post in posts)
                 {
                     ct.ThrowIfCancellationRequested();
                     // "다시 받기" 지정 범위면 받은 기록을 무시 (이미 있는 파일은 파일 단위로 건너뜀)
-                    bool force = reDownloadSince != null
-                        && reDownloadSince.TryGetValue(m.CreatorId!, out var since)
-                        && post.PublishedAt >= since;
-                    if (!force && _state.Contains(m.CreatorId!, post.PostId)) continue;
+                    bool force = since != null && post.PublishedAt >= since;
+                    if (!force && _state.Contains(creatorId, post.PostId)) continue;
                     if (!post.IsAccessible) { summary.LockedSkipped++; continue; }
                     // 플랜 구독 게시물만 받기: 무료 공개 글(feeRequired=0)은 제외
                     if (_settings.PaidPostsOnly && post.FeeRequired <= 0) continue;
@@ -151,7 +141,7 @@ public class SyncEngine
                     {
                         if (await DownloadPostAsync(provider, m, post, ct))
                         {
-                            _state.Add(m.CreatorId!, post.PostId);
+                            _state.Add(creatorId, post.PostId);
                             _saveState();
                             newCount++;
                             summary.NewPosts++;
@@ -164,20 +154,23 @@ public class SyncEngine
                         Log?.Invoke($"  [오류] 게시물 {post.PostId}: {ex.Message}");
                     }
                 }
+                finished = true;
             }
             catch (OperationCanceledException)
             {
                 summary.Cancelled = true;
                 Log?.Invoke("사용자가 중지했습니다.");
+                _state.SetComplete(creatorId, false);
                 break;
             }
             catch (Exception ex)
             {
                 summary.Errors++;
-                Log?.Invoke($"  [오류] 작가 {m.CreatorId} 처리 실패: {ex.Message}");
+                Log?.Invoke($"  [오류] 작가 {creatorId} 처리 실패: {ex.Message}");
             }
+            _state.SetComplete(creatorId, finished && summary.Errors == errorsBefore);
             Log?.Invoke(newCount > 0 ? $"  새 게시물 {newCount}건 저장" : "  새 게시물 없음");
-            CreatorDone?.Invoke(m.CreatorId!, newCount);
+            CreatorDone?.Invoke(creatorId, newCount);
             done++;
         }
 
@@ -204,7 +197,8 @@ public class SyncEngine
 
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
         // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 ('일러 분리' 체크된 분류에만 적용)
-        var root = RootFor(m.Category);
+        var categoryRoot = _settings.RootFor(m.Category);
+        var root = categoryRoot;
         int threshold = _settings.CreatorIllustThresholds.TryGetValue(post.CreatorId, out var t)
             ? t
             : (_settings.FindCategory(m.Category)?.SplitIllust == true ? _settings.IllustMaxImages : 0);
@@ -215,11 +209,11 @@ public class SyncEngine
             if (!hasHeavy && imageCount <= threshold)
                 root = _settings.IllustRoot;
         }
+        var isIllust = root != categoryRoot;
         var postDir = Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 
-        Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" +
-            (root == _settings.IllustRoot && root != RootFor(m.Category) ? " (일러스트)" : ""));
+        Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" + (isIllust ? " (일러스트)" : ""));
         if (_settings.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
             items.Add(new DownloadItem(content.CoverImageUrl!, "cover.jpg", FileKind.Image));
 
@@ -280,15 +274,15 @@ public class SyncEngine
     }
 
     /// <summary>zip 파일명 인코딩 — UTF-8 플래그가 없는 일본어 zip은 Shift-JIS(cp932)로 해석</summary>
-    private static readonly System.Text.Encoding ZipNameEncoding = GetZipNameEncoding();
-    private static System.Text.Encoding GetZipNameEncoding()
+    private static readonly Encoding ZipNameEncoding = GetZipNameEncoding();
+    private static Encoding GetZipNameEncoding()
     {
         try
         {
-            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-            return System.Text.Encoding.GetEncoding(932);
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(932);
         }
-        catch { return System.Text.Encoding.UTF8; }
+        catch { return Encoding.UTF8; }
     }
 
     /// <summary>받은 zip을 게시물 폴더 안에 압축파일명과 같은 하위 폴더로 푼다. RAR·7z는 미지원.</summary>
@@ -325,17 +319,24 @@ public class SyncEngine
     }
 
     private static string Normalize(string s)
-        => new(s.ToLowerInvariant().Where(ch => !char.IsWhiteSpace(ch) && ch != '_' && ch != '-' && ch != '+').ToArray());
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var ch in s)
+            if (!char.IsWhiteSpace(ch) && ch is not ('_' or '-' or '+'))
+                sb.Append(char.ToLowerInvariant(ch));
+        return sb.ToString();
+    }
 }
 
 public static class NameSanitizer
 {
+    private static readonly HashSet<char> Invalid = new(Path.GetInvalidFileNameChars());
+
     public static string Sanitize(string name)
     {
-        var invalid = Path.GetInvalidFileNameChars();
         var sb = new StringBuilder(name.Length);
         foreach (var ch in name)
-            sb.Append(invalid.Contains(ch) ? '_' : ch);
+            sb.Append(Invalid.Contains(ch) ? '_' : ch);
         return sb.ToString();
     }
 }

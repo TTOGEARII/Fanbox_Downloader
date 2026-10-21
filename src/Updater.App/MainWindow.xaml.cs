@@ -1,35 +1,37 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Threading;
 using Updater.Core;
 using Application = System.Windows.Application;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
 
 namespace Updater.App;
 
+/// <summary>메인 창. 기능별로 partial 파일에 나뉘어 있다:
+/// Settings(설정 탭) · Artists(작가 탭) · Sync(동기화·스케줄·프로바이더) · Update(자동 업데이트).</summary>
 public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
-    private AppSettings _settings;
-    private DownloadState _state;
-    private readonly UpdateService _updater = new();
-    private Velopack.UpdateInfo? _pendingUpdate;
+    private const string AppTitle = "Fanbox Updater";
+    private const int MaxLogChars = 400_000;
+
+    private readonly AppSettings _settings;
+    private readonly DownloadState _state;
     private readonly ObservableCollection<ArtistRow> _artists = new();
-    private CancellationTokenSource? _syncCts;
+    private readonly ObservableCollection<CategoryRow> _categoryRows = new();
+    private readonly DispatcherTimer _tickTimer;
+    private readonly DispatcherTimer _applyDebounce;
     private System.Windows.Forms.NotifyIcon? _tray;
-    private readonly DispatcherTimer _schedulerTimer;
     private bool _reallyExit;
-    private bool _syncRunning;
-    private bool _suppressRowEvents;
     private bool _uiReady;
     private bool _uninstalling;
-    private readonly DispatcherTimer _applyDebounce;
 
     /// <summary>작가 그리드의 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화)</summary>
     public ObservableCollection<string> Categories { get; } = new();
-    private readonly ObservableCollection<CategoryRow> _categoryRows = new();
-    /// <summary>마지막으로 가져온 팔로우/후원 작가 목록 (수동 매핑 선택용)</summary>
-    private List<CreatorInfo> _creatorCache = new();
 
     public MainWindow()
     {
@@ -40,12 +42,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         GridCategories.ItemsSource = _categoryRows;
 
         // 기본 정렬: 매핑된 작가 우선, 그 다음 폴더명순 (매핑이 바뀌면 실시간 재정렬)
-        var artistView = (System.Windows.Data.ListCollectionView)
-            System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
-        artistView.SortDescriptions.Add(new System.ComponentModel.SortDescription(
-            nameof(ArtistRow.IsMapped), System.ComponentModel.ListSortDirection.Descending));
-        artistView.SortDescriptions.Add(new System.ComponentModel.SortDescription(
-            nameof(ArtistRow.FolderName), System.ComponentModel.ListSortDirection.Ascending));
+        var artistView = (ListCollectionView)CollectionViewSource.GetDefaultView(_artists);
+        artistView.SortDescriptions.Add(new SortDescription(nameof(ArtistRow.IsMapped), ListSortDirection.Descending));
+        artistView.SortDescriptions.Add(new SortDescription(nameof(ArtistRow.FolderName), ListSortDirection.Ascending));
         artistView.IsLiveSorting = true;
         artistView.LiveSortingProperties.Add(nameof(ArtistRow.IsMapped));
 
@@ -54,17 +53,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SetupTray();
         LoadArtistsFromCache();
 
-        _schedulerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _schedulerTimer.Tick += (_, _) => CheckSchedule();
-        _schedulerTimer.Start();
+        // 30초마다: 스케줄 확인 · 다음 실행 표시 · 유휴 프로바이더 해제 · 주기적 업데이트 확인
+        _tickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _tickTimer.Tick += (_, _) => OnTick();
+        _tickTimer.Start();
         UpdateNextRunText();
 
         TxtVersion.Text = $"v{_updater.CurrentVersion}";
         _ = CheckForUpdatesAsync();
 
         // 작가명 캐시가 비어 있으면(캐시 유실 등) 시작할 때 한 번 자동 새로고침해 복구한다
-        if (_settings.CreatorNames.Count == 0 &&
-            _settings.Accounts.Any(a => a.Provider == "fanbox" && a.Enabled && !string.IsNullOrWhiteSpace(a.SessionId)))
+        if (_settings.CreatorNames.Count == 0 && _settings.ActiveFanboxAccount != null)
             Loaded += (_, _) => BtnRefresh_Click(this, new RoutedEventArgs());
 
         // 설정 탭 자동 반영: 컨트롤 변경 600ms 뒤 저장·적용 (타이핑 중 과도한 재스캔 방지)
@@ -73,31 +72,56 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         WireAutoApply();
         _uiReady = true;
 
+        var args = Environment.GetCommandLineArgs();
         // UI 확인용: --demo-overlay 로 실행하면 업데이트 오버레이를 63%로 표시
-        if (Environment.GetCommandLineArgs().Contains("--demo-overlay"))
-            ShowUpdateOverlay(63);
+        if (args.Contains("--demo-overlay")) ShowUpdateOverlay(63);
         // UI 확인용: --demo-splash 로 실행하면 업데이트 적용 스플래시 창을 10초간 표시
-        if (Environment.GetCommandLineArgs().Contains("--demo-splash"))
-            UpdateService.ShowApplySplashDemo();
+        if (args.Contains("--demo-splash")) UpdateService.ShowApplySplashDemo();
 
-        Closing += (s, e) =>
+        Closing += OnClosing;
+    }
+
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        // 포커스를 잃지 않은 텍스트박스 등 마지막 편집이 유실되지 않게 닫기 전에 반영
+        // (제거 중에는 저장하면 방금 지운 설정 폴더가 되살아나므로 건너뛴다)
+        _applyDebounce.Stop();
+        if (!_uninstalling) ApplySettings(interactive: false);
+        if (!_reallyExit && _settings.CloseToTray)
         {
-            // 포커스를 잃지 않은 텍스트박스 등 마지막 편집이 유실되지 않게 닫기 전에 반영
-            // (제거 중에는 저장하면 방금 지운 설정 폴더가 되살아나므로 건너뛴다)
-            _applyDebounce.Stop();
-            if (!_uninstalling) ApplySettings(interactive: false);
-            if (!_reallyExit && _settings.CloseToTray)
-            {
-                e.Cancel = true;
-                Hide();
-                _tray?.ShowBalloonTip(1500, "Fanbox Updater", "트레이에서 계속 실행 중입니다.", System.Windows.Forms.ToolTipIcon.Info);
-            }
-            else
-            {
-                _tray?.Dispose();
-                Application.Current.Shutdown();
-            }
-        };
+            e.Cancel = true;
+            Hide();
+            _tray?.ShowBalloonTip(1500, AppTitle, "트레이에서 계속 실행 중입니다.", System.Windows.Forms.ToolTipIcon.Info);
+            return;
+        }
+        _syncCts?.Cancel();
+        ReleaseProvider();
+        _tray?.Dispose();
+        Application.Current.Shutdown();
+    }
+
+    private void OnTick()
+    {
+        UpdateNextRunText();
+        CheckSchedule();
+        ReleaseProviderIfIdle();
+        if (DateTime.Now - _lastUpdateCheck > UpdateCheckInterval) _ = CheckForUpdatesAsync();
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // 입력칸 안에서는 단축키를 가로채지 않는다
+        if (Keyboard.FocusedElement is System.Windows.Controls.TextBox or System.Windows.Controls.PasswordBox
+            or Wpf.Ui.Controls.PasswordBox) return;
+        switch (e.Key)
+        {
+            case Key.F5 when BtnSync.IsEnabled:
+                StartSync(); e.Handled = true; break;
+            case Key.Escape when _syncRunning:
+                BtnStop_Click(this, new RoutedEventArgs()); e.Handled = true; break;
+            case Key.R when Keyboard.Modifiers == ModifierKeys.Control && BtnRefresh.IsEnabled:
+                BtnRefresh_Click(this, new RoutedEventArgs()); e.Handled = true; break;
+        }
     }
 
     // ---------- 트레이 ----------
@@ -112,14 +136,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch { trayIcon = System.Drawing.SystemIcons.Application; }
 
-        _tray = new System.Windows.Forms.NotifyIcon
-        {
-            Icon = trayIcon,
-            Visible = true,
-            Text = "Fanbox Updater",
-        };
+        _tray = new System.Windows.Forms.NotifyIcon { Icon = trayIcon, Visible = true, Text = AppTitle };
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("열기", null, (_, _) => Dispatcher.Invoke(ShowFromTray));
+        var open = menu.Items.Add("열기", null, (_, _) => Dispatcher.Invoke(ShowFromTray));
+        open.Font = new System.Drawing.Font(open.Font, System.Drawing.FontStyle.Bold);
         menu.Items.Add("지금 최신화", null, (_, _) => Dispatcher.Invoke(() => StartSync()));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(ExitApp));
@@ -137,952 +157,18 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ExitApp()
     {
         _reallyExit = true;
-        _syncCts?.Cancel();
         Close();
     }
 
-    // ---------- 설정 UI ----------
+    private void Notify(string text)
+        => _tray?.ShowBalloonTip(3000, AppTitle, text, System.Windows.Forms.ToolTipIcon.Info);
 
-    private void LoadSettingsToUi()
+    private static void ShowInfo(string text) => MessageBox.Show(text, AppTitle);
+
+    private static void OpenExternal(string target)
     {
-        var fanbox = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
-        TxtSession.Text = fanbox?.SessionId ?? "";
-        _categoryRows.Clear();
-        foreach (var c in _settings.CategoryRoots)
-        {
-            var row = new CategoryRow { Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust };
-            HookCategoryRow(row);
-            _categoryRows.Add(row);
-        }
-        TxtIllustRoot.Text = _settings.IllustRoot;
-        TxtIllustMax.Text = _settings.IllustMaxImages.ToString();
-        TxtTemplate.Text = _settings.FolderNameTemplate;
-        TxtDateFormat.Text = _settings.DateFormat;
-        TxtParallel.Text = _settings.MaxParallelDownloads.ToString();
-        ChkSaveText.IsChecked = _settings.SaveText;
-        ChkCover.IsChecked = _settings.DownloadCoverImage;
-        ChkAutoCreate.IsChecked = _settings.AutoCreateFolders;
-        ChkPaidOnly.IsChecked = _settings.PaidPostsOnly;
-        ChkExternal.IsChecked = _settings.DownloadExternalLinks;
-        ChkAutoExtract.IsChecked = _settings.AutoExtractArchives;
-        ChkDeleteArchive.IsChecked = _settings.DeleteArchiveAfterExtract;
-        ChkImages.IsChecked = _settings.FileTypes.Images;
-        ChkVideos.IsChecked = _settings.FileTypes.Videos;
-        ChkArchives.IsChecked = _settings.FileTypes.Archives;
-        ChkOthers.IsChecked = _settings.FileTypes.Others;
-        ChkSchedule.IsChecked = _settings.Schedule.Enabled;
-        RadDaily.IsChecked = _settings.Schedule.Mode == "Daily";
-        RadInterval.IsChecked = _settings.Schedule.Mode == "Interval";
-        TxtDailyTime.Text = _settings.Schedule.DailyTime;
-        TxtIntervalHours.Text = _settings.Schedule.IntervalHours.ToString();
-        ChkStartMin.IsChecked = _settings.StartMinimized;
-        ChkCloseTray.IsChecked = _settings.CloseToTray;
-    }
-
-    private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
-    {
-        // 편집 중인 셀 커밋 후 반영 (자동 반영 경로에서는 입력 중인 셀을 닫아버리지 않도록 버튼에서만)
-        GridCategories.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
-        ApplySettings(interactive: true);
-    }
-
-    /// <summary>설정 UI → _settings 반영 + 저장. 설정 탭은 자동 반영(디바운스)이라 버튼 없이도 호출된다 —
-    /// interactive=false면 경고창 없이 조용히 넘어가고, 분류 루트가 바뀐 경우에만 작가 목록을 재스캔한다.</summary>
-    private void ApplySettings(bool interactive)
-    {
-        // 분류 그리드 → 설정. 자동 반영 중에는 일시적으로 이름이 비거나 중복될 수 있어 조용히 거른다 (첫 번째 우선)
-        var cats = _categoryRows
-            .Select(r => new CategoryRoot { Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
-            .Where(c => !string.IsNullOrEmpty(c.Name))
-            .ToList();
-        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var dupCount = cats.RemoveAll(c => !seenNames.Add(c.Name));
-        if (interactive)
-        {
-            if (cats.Count == 0)
-            {
-                MessageBox.Show("저장 분류를 최소 1개 입력하세요.", "Fanbox Updater");
-                return;
-            }
-            if (dupCount > 0)
-            {
-                MessageBox.Show("분류 이름이 중복되었습니다.", "Fanbox Updater");
-                return;
-            }
-        }
-
-        var fanbox = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox");
-        if (fanbox == null)
-        {
-            fanbox = new AccountSettings { Provider = "fanbox" };
-            _settings.Accounts.Add(fanbox);
-        }
-        fanbox.SessionId = TxtSession.Text.Trim();
-
-        var rootsChanged = false;
-        if (cats.Count > 0) // 자동 반영 중 전부 지워진 순간은 기존 분류를 유지 (최소 1개 필요)
-        {
-            rootsChanged = !cats.Select(c => $"{c.Name}|{c.Path}").SequenceEqual(
-                _settings.CategoryRoots.Select(c => $"{c.Name}|{c.Path}"), StringComparer.OrdinalIgnoreCase);
-            _settings.CategoryRoots = cats;
-        }
-
-        _settings.IllustRoot = TxtIllustRoot.Text.Trim();
-        _settings.IllustMaxImages = int.TryParse(TxtIllustMax.Text, out var im) ? Math.Clamp(im, 1, 50) : 4;
-        _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
-        _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
-        _settings.MaxParallelDownloads = int.TryParse(TxtParallel.Text, out var p) ? Math.Clamp(p, 1, 8) : 3;
-        _settings.SaveText = ChkSaveText.IsChecked == true;
-        _settings.DownloadCoverImage = ChkCover.IsChecked == true;
-        _settings.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
-        _settings.PaidPostsOnly = ChkPaidOnly.IsChecked == true;
-        _settings.DownloadExternalLinks = ChkExternal.IsChecked == true;
-        _settings.AutoExtractArchives = ChkAutoExtract.IsChecked == true;
-        _settings.DeleteArchiveAfterExtract = ChkDeleteArchive.IsChecked == true;
-        _settings.FileTypes.Images = ChkImages.IsChecked == true;
-        _settings.FileTypes.Videos = ChkVideos.IsChecked == true;
-        _settings.FileTypes.Archives = ChkArchives.IsChecked == true;
-        _settings.FileTypes.Others = ChkOthers.IsChecked == true;
-        _settings.Schedule.Enabled = ChkSchedule.IsChecked == true;
-        _settings.Schedule.Mode = RadInterval.IsChecked == true ? "Interval" : "Daily";
-        _settings.Schedule.DailyTime = TimeOnly.TryParse(TxtDailyTime.Text, out _) ? TxtDailyTime.Text : "03:00";
-        _settings.Schedule.IntervalHours = int.TryParse(TxtIntervalHours.Text, out var h) ? Math.Max(1, h) : 6;
-        _settings.StartMinimized = ChkStartMin.IsChecked == true;
-        _settings.CloseToTray = ChkCloseTray.IsChecked == true;
-
-        _settings.Save(App.SettingsPath);
-        if (interactive || rootsChanged)
-        {
-            RefreshCategoryUi();
-            LoadArtistsFromCache(); // 상태바에 '폴더 N개' 안내를 띄운다
-        }
-        UpdateNextRunText();
-        if (interactive) TxtStatusBar.Text = "설정을 저장했습니다.";
-        else if (cats.Count == 0) TxtStatusBar.Text = "분류가 모두 비어 있어 기존 저장 분류를 유지합니다 (최소 1개 필요).";
-        else if (!rootsChanged) TxtStatusBar.Text = "설정이 자동 반영되었습니다.";
-    }
-
-    /// <summary>설정 컨트롤 변경 시 자동 반영을 예약한다 (600ms 디바운스).</summary>
-    private void QueueAutoApply()
-    {
-        if (!_uiReady) return;
-        _applyDebounce.Stop();
-        _applyDebounce.Start();
-    }
-
-    /// <summary>설정 탭의 모든 컨트롤 변경을 자동 반영에 연결한다.
-    /// 텍스트박스는 타이핑마다 저장하지 않도록 포커스를 잃을 때 반영한다.</summary>
-    private void WireAutoApply()
-    {
-        foreach (var toggle in new System.Windows.Controls.Primitives.ToggleButton[]
-                 {
-                     ChkSaveText, ChkCover, ChkAutoCreate, ChkPaidOnly, ChkExternal, ChkAutoExtract,
-                     ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
-                     ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
-                 })
-        {
-            toggle.Checked += (_, _) => QueueAutoApply();
-            toggle.Unchecked += (_, _) => QueueAutoApply();
-        }
-        foreach (var tb in new[]
-                 {
-                     TxtSession, TxtIllustRoot, TxtIllustMax, TxtTemplate, TxtDateFormat,
-                     TxtParallel, TxtDailyTime, TxtIntervalHours,
-                 })
-            tb.LostFocus += (_, _) => QueueAutoApply();
-    }
-
-    /// <summary>분류 콤보박스(작가 그리드·필터)를 분류 그리드 내용으로 갱신 — 분류 입력 즉시 반영</summary>
-    private void RefreshCategoryUi()
-    {
-        Categories.Clear();
-        foreach (var r in _categoryRows.Where(r => !string.IsNullOrWhiteSpace(r.Name)))
-            if (!Categories.Contains(r.Name)) Categories.Add(r.Name);
-
-        var selected = CmbFilter.SelectedItem as string ?? "전체";
-        var items = new List<string> { "전체" };
-        items.AddRange(Categories);
-        items.Add("매칭 안 됨");
-        CmbFilter.ItemsSource = items;
-        CmbFilter.SelectedItem = items.Contains(selected) ? selected : "전체";
-    }
-
-    private void HookCategoryRow(CategoryRow row)
-    {
-        row.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(CategoryRow.Name)) RefreshCategoryUi();
-            if (e.PropertyName is nameof(CategoryRow.Name) or nameof(CategoryRow.Path) or nameof(CategoryRow.SplitIllust))
-                QueueAutoApply();
-        };
-    }
-
-    private void BtnAddCategory_Click(object sender, RoutedEventArgs e)
-    {
-        var row = new CategoryRow();
-        HookCategoryRow(row);
-        _categoryRows.Add(row);
-        // 새 줄에서 바로 경로를 고를 수 있게 폴더 선택을 띄움
-        var picked = PickFolder(null);
-        if (picked != null)
-        {
-            row.Path = picked;
-            if (string.IsNullOrWhiteSpace(row.Name)) row.Name = Path.GetFileName(picked.TrimEnd('\\'));
-        }
-        GridCategories.SelectedItem = row;
-        GridCategories.ScrollIntoView(row);
-    }
-
-    private void ChkAllCategories_Click(object sender, RoutedEventArgs e)
-    {
-        var isChecked = ((System.Windows.Controls.CheckBox)sender).IsChecked == true;
-        foreach (var row in _categoryRows) row.Selected = isChecked;
-    }
-
-    private void BtnRemoveCategory_Click(object sender, RoutedEventArgs e)
-    {
-        var targets = _categoryRows.Where(r => r.Selected).ToList();
-        // 체크된 분류가 없으면 그리드에서 선택(하이라이트)된 줄을 삭제
-        if (targets.Count == 0 && GridCategories.SelectedItem is CategoryRow cur) targets.Add(cur);
-        if (targets.Count == 0)
-        {
-            TxtStatusBar.Text = "삭제할 분류를 체크하거나 선택하세요.";
-            return;
-        }
-        foreach (var row in targets) _categoryRows.Remove(row);
-        RefreshCategoryUi();
-        QueueAutoApply();
-        TxtStatusBar.Text = $"분류 {targets.Count}개를 제거했습니다.";
-    }
-
-    private void BtnBrowseCategory_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not CategoryRow row) return;
-        var picked = PickFolder(row.Path);
-        if (picked == null) return;
-        row.Path = picked;
-        if (string.IsNullOrWhiteSpace(row.Name)) row.Name = Path.GetFileName(picked.TrimEnd('\\'));
-    }
-
-    private void BtnUninstall_Click(object sender, RoutedEventArgs e)
-    {
-        if (!_updater.IsInstalled)
-        {
-            MessageBox.Show("개발 실행에서는 제거할 수 없습니다. Setup.exe로 설치된 경우에만 동작합니다.", "Fanbox Updater");
-            return;
-        }
-        if (MessageBox.Show(
-                "Fanbox Updater를 제거할까요?\n\n받아둔 파일과 저장 폴더는 지우지 않습니다.",
-                "프로그램 제거", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
-
-        var wipeData = MessageBox.Show(
-            $"설정과 받은 기록도 함께 삭제할까요?\n({App.DataDir})\n\n[예] 흔적 없이 삭제 — 재설치하면 처음부터 다시 설정하고, 게시물도 전부 다시 받습니다.\n[아니요] 남겨두기 — 재설치하면 그대로 이어서 씁니다.",
-            "설정·기록 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
-
-        try
-        {
-            UpdateService.LaunchUninstaller();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"제거 실행에 실패했습니다: {ex.Message}\n\nWindows 설정 → 앱 → 설치된 앱에서 제거해주세요.", "Fanbox Updater");
-            return;
-        }
-
-        _uninstalling = true; // 종료 시 자동 저장이 설정 폴더를 되살리지 않게
-        if (wipeData)
-        {
-            try { Directory.Delete(App.DataDir, recursive: true); }
-            catch { /* 열려 있는 로그 등은 무시 — 언인스톨러가 지울 수 있는 건 지운다 */ }
-        }
-        _reallyExit = true;
-        _tray?.Dispose();
-        Application.Current.Shutdown();
-    }
-
-    private void BtnBrowseIllust_Click(object sender, RoutedEventArgs e)
-    {
-        var picked = PickFolder(TxtIllustRoot.Text.Trim());
-        if (picked != null) TxtIllustRoot.Text = picked;
-    }
-
-    private static string? PickFolder(string? initial)
-    {
-        using var dlg = new System.Windows.Forms.FolderBrowserDialog { ShowNewFolderButton = true };
-        if (!string.IsNullOrWhiteSpace(initial) && Directory.Exists(initial)) dlg.SelectedPath = initial;
-        return dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK ? dlg.SelectedPath : null;
-    }
-
-    // ---------- 작가 목록 ----------
-
-    /// <summary>모든 분류 루트의 폴더 + 수동 매핑 기준으로 그리드를 즉시 채운다 (네트워크 없이).</summary>
-    private void LoadArtistsFromCache()
-    {
-        _suppressRowEvents = true;
-        _artists.Clear();
-        var roots = new List<(string Root, string Category)>();
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var missing = new List<string>();
-        foreach (var cat in _settings.CategoryRoots)
-        {
-            if (string.IsNullOrWhiteSpace(cat.Path)) continue;
-            if (!Directory.Exists(cat.Path)) { missing.Add($"{cat.Name}: {cat.Path}"); continue; }
-            if (!seenPaths.Add(Path.GetFullPath(cat.Path))) continue;
-            roots.Add((cat.Path, cat.Name));
-        }
-
-        foreach (var (root, category) in roots)
-        foreach (var dir in Directory.GetDirectories(root))
-        {
-            var folder = Path.GetFileName(dir);
-            bool manual = _settings.Mapping.TryGetValue(folder, out var mapped);
-            if (!manual && _settings.AutoMatches.TryGetValue(folder, out var auto)) mapped = auto;
-            var row = new ArtistRow
-            {
-                FolderName = folder,
-                Category = category,
-                CreatorId = mapped ?? "",
-                CreatorName = mapped != null && _settings.CreatorNames.TryGetValue(mapped, out var cachedName)
-                    ? cachedName : "",
-                Status = string.IsNullOrEmpty(mapped) ? "미확인" : (manual ? "수동 매핑" : "자동 매칭"),
-                DownloadedCount = string.IsNullOrEmpty(mapped) ? 0 : _state.CountFor(mapped),
-                // 동기화 체크 기본값: 매핑된 작가만 켠다 (미매핑 폴더는 동기화 대상이 아니므로)
-                Enabled = !string.IsNullOrEmpty(mapped) && !_settings.DisabledCreators.Contains(mapped),
-                IllustThreshold = mapped != null && _settings.CreatorIllustThresholds.TryGetValue(mapped, out var th)
-                    ? th.ToString() : "",
-            };
-            HookRow(row);
-            _artists.Add(row);
-        }
-        _suppressRowEvents = false;
-        RefreshAllSyncCheckState();
-        TxtStatusBar.Text = $"폴더 {_artists.Count}개. '작가 목록 새로고침'을 누르면 자동 매칭을 실행합니다."
-            + (missing.Count > 0 ? $"  (접근 불가 경로 — {string.Join(", ", missing)})" : "");
-    }
-
-    private void HookRow(ArtistRow row)
-    {
-        row.PropertyChanged += (s, e) =>
-        {
-            if (_suppressRowEvents) return;
-            if (e.PropertyName == nameof(ArtistRow.Enabled)) OnRowEnabledChanged((ArtistRow)s!);
-            if (e.PropertyName == nameof(ArtistRow.Category)) OnRowCategoryChanged((ArtistRow)s!);
-        };
-    }
-
-    private void OnRowEnabledChanged(ArtistRow row)
-    {
-        RefreshAllSyncCheckState();
-        if (string.IsNullOrEmpty(row.CreatorId)) return;
-        if (row.Enabled) _settings.DisabledCreators.Remove(row.CreatorId);
-        else _settings.DisabledCreators.Add(row.CreatorId);
-        _settings.Save(App.SettingsPath);
-    }
-
-    /// <summary>헤더 전체선택 체크박스를 보이는 행들의 실제 상태에 맞춘다 (전체 켬 / 전체 끔 / 섞임).</summary>
-    private void RefreshAllSyncCheckState()
-    {
-        if (ChkAllSync == null) return;
-        var rows = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists)
-            .Cast<object>().OfType<ArtistRow>().ToList();
-        if (rows.Count == 0) { ChkAllSync.IsChecked = false; return; }
-        var on = rows.Count(r => r.Enabled);
-        ChkAllSync.IsChecked = on == rows.Count ? true : on == 0 ? false : (bool?)null;
-    }
-
-    private void OnRowCategoryChanged(ArtistRow row)
-    {
-        if (!string.IsNullOrEmpty(row.CreatorId))
-        {
-            _settings.CreatorCategories[row.CreatorId] = row.Category;
-            _settings.Save(App.SettingsPath);
-        }
-
-        // 기존 폴더를 새 분류의 루트로 이동할지 묻기
-        var newRoot = _settings.FindCategory(row.Category)?.Path;
-        if (string.IsNullOrWhiteSpace(newRoot)) return;
-        var newPath = Path.Combine(newRoot, row.FolderName);
-        if (Directory.Exists(newPath)) return;
-        // 폴더가 현재 놓여 있는 다른 분류 루트를 찾는다
-        var oldPath = _settings.CategoryRoots
-            .Where(c => !string.IsNullOrWhiteSpace(c.Path)
-                        && !string.Equals(c.Path, newRoot, StringComparison.OrdinalIgnoreCase))
-            .Select(c => Path.Combine(c.Path, row.FolderName))
-            .FirstOrDefault(Directory.Exists);
-        if (oldPath == null) return;
-
-        var answer = MessageBox.Show(
-            $"'{row.FolderName}' 폴더를 {row.Category} 저장 경로로 이동할까요?\n\n{oldPath}\n→ {newPath}",
-            "폴더 이동", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (answer == MessageBoxResult.Yes)
-        {
-            try
-            {
-                Directory.Move(oldPath, newPath);
-                TxtStatusBar.Text = $"'{row.FolderName}' 폴더를 이동했습니다.";
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"폴더 이동 실패: {ex.Message}", "Fanbox Updater");
-            }
-        }
-    }
-
-    private void ChkAllSync_Click(object sender, RoutedEventArgs e)
-    {
-        var isChecked = ((System.Windows.Controls.CheckBox)sender).IsChecked == true;
-        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
-        _suppressRowEvents = true;
-        int count = 0;
-        foreach (var row in view.Cast<object>().OfType<ArtistRow>())
-        {
-            row.Enabled = isChecked;
-            count++;
-            if (string.IsNullOrEmpty(row.CreatorId)) continue;
-            if (isChecked) _settings.DisabledCreators.Remove(row.CreatorId);
-            else _settings.DisabledCreators.Add(row.CreatorId);
-        }
-        _suppressRowEvents = false;
-        _settings.Save(App.SettingsPath);
-        RefreshAllSyncCheckState();
-        TxtStatusBar.Text = $"{count}개 작가 동기화 {(isChecked ? "전체 선택" : "전체 해제")}";
-    }
-
-    private void CmbFilter_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        => ApplyArtistFilter();
-
-    private void TxtSearch_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        => ApplyArtistFilter();
-
-    /// <summary>분류 필터 + 검색어를 함께 적용</summary>
-    private void ApplyArtistFilter()
-    {
-        if (GridArtists == null || CmbFilter == null || TxtSearch == null) return;
-        var cat = CmbFilter.SelectedItem as string ?? "전체";
-        var q = TxtSearch.Text.Trim();
-        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_artists);
-        if (cat == "전체" && q.Length == 0) { view.Filter = null; RefreshAllSyncCheckState(); return; }
-        view.Filter = o =>
-        {
-            var r = (ArtistRow)o;
-            bool catOk = cat switch
-            {
-                "전체" => true,
-                "매칭 안 됨" => string.IsNullOrEmpty(r.CreatorId),
-                _ => r.Category == cat,
-            };
-            if (!catOk) return false;
-            return q.Length == 0
-                || r.FolderName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || r.CreatorName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || r.CreatorId.Contains(q, StringComparison.OrdinalIgnoreCase);
-        };
-        TxtStatusBar.Text = $"표시 {view.Cast<object>().Count()} / 전체 {_artists.Count}";
-        RefreshAllSyncCheckState();
-    }
-
-    private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        if (GridArtists.SelectedItem is not ArtistRow row) return;
-        var root = new SyncEngine(_settings, _state, SaveState).RootFor(row.Category);
-        var path = string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, row.FolderName);
-        if (path == null || !Directory.Exists(path))
-        {
-            TxtStatusBar.Text = $"폴더를 찾을 수 없습니다: {path ?? row.FolderName}";
-            return;
-        }
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
-    }
-
-    private void MenuOpenFanbox_Click(object sender, RoutedEventArgs e)
-    {
-        if (GridArtists.SelectedItem is not ArtistRow row || string.IsNullOrEmpty(row.CreatorId))
-        {
-            TxtStatusBar.Text = "매칭된 작가가 아닙니다 — 먼저 매핑하세요.";
-            return;
-        }
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-            $"https://{row.CreatorId}.fanbox.cc") { UseShellExecute = true });
-    }
-
-    private void GridArtists_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
-    {
-        // creatorId / 일러 기준 칸 수동 입력 → 설정 저장
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (e.Row.Item is not ArtistRow row) return;
-            var id = row.CreatorId.Trim();
-            if (string.IsNullOrEmpty(id))
-                _settings.Mapping.Remove(row.FolderName);
-            else
-            {
-                _settings.Mapping[row.FolderName] = id;
-                if (row.Status is "미확인" or "매칭 안 됨") row.Status = "수동 매핑";
-                row.DownloadedCount = _state.CountFor(id);
-                if (_settings.CreatorNames.TryGetValue(id, out var knownName))
-                    row.CreatorName = knownName;
-            }
-
-            // 일러 기준 장수 (빈칸=전역 기본, 0=분리 안 함)
-            if (!string.IsNullOrEmpty(id))
-            {
-                var raw = row.IllustThreshold.Trim();
-                if (string.IsNullOrEmpty(raw))
-                    _settings.CreatorIllustThresholds.Remove(id);
-                else if (int.TryParse(raw, out var th) && th >= 0)
-                    _settings.CreatorIllustThresholds[id] = Math.Min(th, 100);
-                else
-                    row.IllustThreshold = ""; // 잘못된 입력은 초기화
-            }
-            _settings.Save(App.SettingsPath);
-        }, DispatcherPriority.Background);
-    }
-
-    /// <summary>팔로우/후원 작가 목록을 가져와 캐시에 저장. 쿠키 미설정 등이면 null.</summary>
-    private async Task<List<CreatorInfo>?> FetchCreatorsAsync()
-    {
-        var account = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox" && a.Enabled);
-        if (account == null || string.IsNullOrWhiteSpace(account.SessionId))
-        {
-            MessageBox.Show("설정 탭에서 FANBOXSESSID 쿠키를 먼저 입력하세요.", "Fanbox Updater");
-            return null;
-        }
-        using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
-        await provider.InitializeAsync(CancellationToken.None);
-        _creatorCache = await provider.GetFollowedCreatorsAsync(CancellationToken.None);
-        // 작가명 캐시 갱신 — 재시작 후에도 그리드에 작가명이 바로 보이게
-        foreach (var c in _creatorCache)
-            _settings.CreatorNames[c.CreatorId] = c.DisplayName;
-        _settings.Save(App.SettingsPath);
-        return _creatorCache;
-    }
-
-    private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
-    {
-        if (_syncRunning) return;
-        BtnRefresh.IsEnabled = false;
-        TxtStatus.Text = "작가 목록 가져오는 중...";
-        try
-        {
-            var creators = await FetchCreatorsAsync();
-            if (creators == null) { TxtStatus.Text = "대기 중"; return; }
-            var engine = new SyncEngine(_settings, _state, SaveState);
-            ApplyMatches(engine.MatchFolders(creators));
-            TxtStatus.Text = $"작가 매칭 완료 — 팔로우/후원 {creators.Count}명";
-        }
-        catch (Exception ex)
-        {
-            TxtStatus.Text = "작가 목록 조회 실패";
-            AppendLog($"[오류] {ex.Message}");
-        }
-        finally { BtnRefresh.IsEnabled = true; }
-    }
-
-    // ---------- 수동 매핑 ----------
-
-    private async void BtnMapCreator_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not ArtistRow row) return;
-
-        if (_creatorCache.Count == 0)
-        {
-            BtnRefresh.IsEnabled = false;
-            TxtStatus.Text = "작가 목록 가져오는 중...";
-            try
-            {
-                if (await FetchCreatorsAsync() == null) { TxtStatus.Text = "대기 중"; return; }
-                TxtStatus.Text = $"팔로우/후원 작가 {_creatorCache.Count}명";
-            }
-            catch (Exception ex)
-            {
-                TxtStatus.Text = "작가 목록 조회 실패";
-                AppendLog($"[오류] {ex.Message}");
-                return;
-            }
-            finally { BtnRefresh.IsEnabled = true; }
-        }
-        ShowCreatorPicker(row);
-    }
-
-    private void ShowCreatorPicker(ArtistRow row)
-    {
-        var all = _creatorCache.OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
-        string Disp(CreatorInfo c) => $"{c.DisplayName}  ({c.CreatorId})";
-        var byDisp = all.ToDictionary(Disp);
-
-        var search = new Wpf.Ui.Controls.TextBox { PlaceholderText = "작가명 또는 creatorId 검색" };
-        var list = new System.Windows.Controls.ListBox { Height = 320, Margin = new Thickness(0, 8, 0, 8) };
-        void ApplyFilter()
-        {
-            var q = search.Text.Trim();
-            list.ItemsSource = all
-                .Where(c => q.Length == 0
-                    || c.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                    || c.CreatorId.Contains(q, StringComparison.OrdinalIgnoreCase))
-                .Select(Disp).ToList();
-        }
-        search.TextChanged += (_, _) => ApplyFilter();
-        ApplyFilter();
-        // 현재 매핑된 작가를 미리 선택
-        if (!string.IsNullOrEmpty(row.CreatorId))
-        {
-            var cur = all.FirstOrDefault(c => string.Equals(c.CreatorId, row.CreatorId, StringComparison.OrdinalIgnoreCase));
-            if (cur != null) { list.SelectedItem = Disp(cur); list.ScrollIntoView(list.SelectedItem); }
-        }
-
-        var ok = new System.Windows.Controls.Button { Content = "매핑", Padding = new Thickness(18, 6, 18, 6), IsDefault = true };
-        var unmap = new System.Windows.Controls.Button { Content = "매핑 해제", Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(8, 0, 0, 0) };
-        var cancel = new System.Windows.Controls.Button { Content = "취소", Padding = new Thickness(18, 6, 18, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
-        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
-        buttons.Children.Add(ok); buttons.Children.Add(unmap); buttons.Children.Add(cancel);
-
-        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
-        panel.Children.Add(new System.Windows.Controls.TextBlock
-        {
-            Text = $"'{row.FolderName}' 폴더와 매핑할 작가를 선택하세요.",
-            Margin = new Thickness(0, 0, 0, 10),
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(search);
-        panel.Children.Add(list);
-        panel.Children.Add(buttons);
-
-        var dlg = new Window
-        {
-            Title = "작가 수동 매핑",
-            Content = panel,
-            Width = 420,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            ResizeMode = ResizeMode.NoResize,
-            Background = System.Windows.Media.Brushes.Transparent,
-        };
-        bool? result = null;
-        ok.Click += (_, _) => { result = true; dlg.Close(); };
-        unmap.Click += (_, _) => { result = false; dlg.Close(); };
-        list.MouseDoubleClick += (_, _) => { if (list.SelectedItem != null) { result = true; dlg.Close(); } };
-        dlg.ShowDialog();
-
-        if (result == false)
-        {
-            _settings.Mapping.Remove(row.FolderName);
-            _settings.Save(App.SettingsPath);
-            _suppressRowEvents = true;
-            row.CreatorId = "";
-            row.CreatorName = "";
-            row.Status = "미확인";
-            row.DownloadedCount = 0;
-            row.Enabled = false; // 미매핑 폴더는 동기화 대상이 아님
-            _suppressRowEvents = false;
-            RefreshAllSyncCheckState();
-            TxtStatusBar.Text = $"'{row.FolderName}' 매핑을 해제했습니다.";
-            return;
-        }
-        if (result != true || list.SelectedItem is not string disp || !byDisp.TryGetValue(disp, out var creator)) return;
-
-        _settings.Mapping[row.FolderName] = creator.CreatorId;
-        _settings.Save(App.SettingsPath);
-        _suppressRowEvents = true;
-        row.CreatorId = creator.CreatorId;
-        row.CreatorName = creator.DisplayName;
-        row.Status = "수동 매핑";
-        row.DownloadedCount = _state.CountFor(creator.CreatorId);
-        row.Enabled = !_settings.DisabledCreators.Contains(creator.CreatorId);
-        row.IllustThreshold = _settings.CreatorIllustThresholds.TryGetValue(creator.CreatorId, out var th)
-            ? th.ToString() : "";
-        _suppressRowEvents = false;
-        RefreshAllSyncCheckState();
-        TxtStatusBar.Text = $"'{row.FolderName}' ↔ {creator.DisplayName} ({creator.CreatorId}) 매핑 저장됨";
-    }
-
-    private void ApplyMatches(List<FolderMatch> matches)
-    {
-        _suppressRowEvents = true;
-        foreach (var m in matches)
-        {
-            var row = _artists.FirstOrDefault(r => r.FolderName == m.FolderName && r.Category == m.Category)
-                   ?? _artists.FirstOrDefault(r => r.FolderName == m.FolderName);
-            if (row == null)
-            {
-                // 동기화 체크 기본값: 매핑되기 전에는 꺼둔다 (매핑되면 아래에서 켜짐)
-                row = new ArtistRow { FolderName = m.FolderName, Category = m.Category, Enabled = false };
-                HookRow(row);
-                _artists.Add(row);
-            }
-            row.Category = m.Category;
-            if (m.CreatorId != null)
-            {
-                row.CreatorId = m.CreatorId;
-                row.CreatorName = m.CreatorName ?? "";
-                row.Status = _settings.Mapping.ContainsKey(m.FolderName) ? "수동 매핑" : "자동 매칭";
-                row.DownloadedCount = _state.CountFor(m.CreatorId);
-                row.Enabled = !_settings.DisabledCreators.Contains(m.CreatorId);
-                row.IllustThreshold = _settings.CreatorIllustThresholds.TryGetValue(m.CreatorId, out var th)
-                    ? th.ToString() : "";
-            }
-            else
-            {
-                row.Status = "매칭 안 됨";
-            }
-        }
-        _suppressRowEvents = false;
-
-        // 작가명 캐시 갱신 (이름을 모르는 매핑은 creatorId가 그대로 들어오므로 캐시를 덮어쓰지 않음)
-        foreach (var m in matches)
-        {
-            if (m.CreatorId == null || string.IsNullOrEmpty(m.CreatorName)) continue;
-            if (m.CreatorName == m.CreatorId && _settings.CreatorNames.ContainsKey(m.CreatorId)) continue;
-            _settings.CreatorNames[m.CreatorId] = m.CreatorName;
-        }
-        // 자동 매칭 결과 캐시 — 재시작 후에도 그리드에 매칭 상태가 바로 보이게 (새로고침마다 재계산)
-        // 매칭이 하나도 없으면(작가 목록 조회 실패/쿠키 만료 등) 기존 캐시를 지우지 않고 보존한다
-        if (matches.Any(m => m.CreatorId != null))
-        {
-            var newAuto = new Dictionary<string, string>();
-            foreach (var m in matches)
-                if (m.CreatorId != null && !_settings.Mapping.ContainsKey(m.FolderName))
-                    newAuto[m.FolderName] = m.CreatorId;
-            _settings.AutoMatches = newAuto;
-        }
-        _settings.Save(App.SettingsPath);
-        RefreshAllSyncCheckState();
-    }
-
-    // ---------- 동기화 ----------
-
-    private void BtnSync_Click(object sender, RoutedEventArgs e) => StartSync();
-
-    private void BtnRedownload_Click(object sender, RoutedEventArgs e)
-    {
-        if (_syncRunning) return;
-        if (GridArtists.SelectedItem is not ArtistRow row || string.IsNullOrEmpty(row.CreatorId))
-        {
-            MessageBox.Show("작가 탭에서 다시 받을 작가를 먼저 선택하세요.", "Fanbox Updater");
-            return;
-        }
-
-        // 날짜 선택 다이얼로그
-        var picker = new System.Windows.Controls.DatePicker
-        {
-            SelectedDate = DateTime.Today.AddMonths(-3),
-            Margin = new Thickness(0, 10, 0, 16),
-        };
-        var ok = new System.Windows.Controls.Button { Content = "다시 받기", Padding = new Thickness(18, 6, 18, 6), IsDefault = true };
-        var cancel = new System.Windows.Controls.Button { Content = "취소", Padding = new Thickness(18, 6, 18, 6), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
-        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
-        buttons.Children.Add(ok); buttons.Children.Add(cancel);
-        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
-        panel.Children.Add(new System.Windows.Controls.TextBlock
-        {
-            Text = $"'{row.FolderName}' ({row.CreatorId}) 작가의\n이 날짜 이후 게시물을 받은 기록과 무관하게 다시 받습니다.\n이미 있는 파일은 건너뜁니다.",
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(picker);
-        panel.Children.Add(buttons);
-        var dlg = new Window
-        {
-            Title = "다시 받기",
-            Content = panel,
-            Width = 380,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            ResizeMode = ResizeMode.NoResize,
-            Background = System.Windows.Media.Brushes.Transparent,
-        };
-        ok.Click += (_, _) => { dlg.DialogResult = true; dlg.Close(); };
-        if (dlg.ShowDialog() != true || picker.SelectedDate == null) return;
-
-        StartSync(
-            new Dictionary<string, DateTime> { [row.CreatorId] = picker.SelectedDate.Value },
-            new HashSet<string> { row.CreatorId });
-    }
-
-    private async void StartSync(Dictionary<string, DateTime>? reDownloadSince = null,
-        HashSet<string>? onlyCreators = null)
-    {
-        if (_syncRunning) return;
-        var account = _settings.Accounts.FirstOrDefault(a => a.Provider == "fanbox" && a.Enabled);
-        if (account == null || string.IsNullOrWhiteSpace(account.SessionId))
-        {
-            MessageBox.Show("설정 탭에서 FANBOXSESSID 쿠키를 먼저 입력하세요.", "Fanbox Updater");
-            return;
-        }
-
-        _syncRunning = true;
-        _syncCts = new CancellationTokenSource();
-        BtnSync.IsEnabled = false;
-        BtnRefresh.IsEnabled = false;
-        BtnRedownload.IsEnabled = false;
-        BtnStop.IsEnabled = true;
-        Progress.Value = 0;
-        TxtStatus.Text = "동기화 시작...";
-
-        var engine = new SyncEngine(_settings, _state, SaveState);
-        engine.Log += msg => Dispatcher.BeginInvoke(() => AppendLog(msg));
-        engine.Matched += matches => Dispatcher.BeginInvoke(() => ApplyMatches(matches));
-        engine.CreatorProgress += (creatorId, done, total) => Dispatcher.BeginInvoke(() =>
-        {
-            Progress.Value = total == 0 ? 0 : done * 100.0 / total;
-            var row = _artists.FirstOrDefault(r => r.CreatorId == creatorId);
-            TxtStatus.Text = $"동기화 중 ({done + 1}/{total}) — {row?.FolderName ?? creatorId}";
-        });
-        engine.CreatorDone += (creatorId, newCount) => Dispatcher.BeginInvoke(() =>
-        {
-            var row = _artists.FirstOrDefault(r => r.CreatorId == creatorId);
-            if (row != null)
-            {
-                row.LastResult = newCount > 0 ? $"새 게시물 {newCount}건 ({DateTime.Now:HH:mm})" : $"변경 없음 ({DateTime.Now:HH:mm})";
-                row.DownloadedCount = _state.CountFor(creatorId);
-            }
-        });
-
-        try
-        {
-            using var provider = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
-            TxtStatus.Text = "브라우저 엔진 초기화 중...";
-            await provider.InitializeAsync(_syncCts.Token);
-            var summary = await engine.RunAsync(provider, _syncCts.Token, reDownloadSince, onlyCreators);
-
-            Progress.Value = 100;
-            TxtStatus.Text = summary.Cancelled
-                ? $"중지됨 — 새 게시물 {summary.NewPosts}건 저장"
-                : $"완료 — 새 게시물 {summary.NewPosts}건" +
-                  (summary.LockedSkipped > 0 ? $", 열람 불가 {summary.LockedSkipped}건" : "") +
-                  (summary.Errors > 0 ? $", 오류 {summary.Errors}건" : "");
-            _tray?.ShowBalloonTip(3000, "Fanbox Updater", TxtStatus.Text, System.Windows.Forms.ToolTipIcon.Info);
-
-            _settings.Schedule.LastRunAt = DateTime.Now;
-            _settings.Save(App.SettingsPath);
-            UpdateNextRunText();
-        }
-        catch (OperationCanceledException)
-        {
-            TxtStatus.Text = "중지됨";
-        }
-        catch (Exception ex)
-        {
-            TxtStatus.Text = "동기화 실패";
-            AppendLog($"[오류] {ex.Message}");
-            MessageBox.Show(ex.Message, "동기화 실패");
-        }
-        finally
-        {
-            _syncRunning = false;
-            BtnSync.IsEnabled = true;
-            BtnRefresh.IsEnabled = true;
-            BtnRedownload.IsEnabled = true;
-            BtnStop.IsEnabled = false;
-            _syncCts?.Dispose();
-            _syncCts = null;
-        }
-    }
-
-    private void BtnStop_Click(object sender, RoutedEventArgs e) => _syncCts?.Cancel();
-
-    private void SaveState() => _state.Save(App.StatePath);
-
-    // ---------- 스케줄러 ----------
-
-    private void CheckSchedule()
-    {
-        UpdateNextRunText();
-        if (!_settings.Schedule.Enabled || _syncRunning) return;
-        var next = GetNextRunTime();
-        if (next != null && DateTime.Now >= next)
-            StartSync();
-    }
-
-    private DateTime? GetNextRunTime()
-    {
-        var s = _settings.Schedule;
-        if (!s.Enabled) return null;
-        if (s.Mode == "Interval")
-            return (s.LastRunAt ?? DateTime.MinValue).AddHours(s.IntervalHours);
-
-        // Daily 모드
-        if (!TimeOnly.TryParse(s.DailyTime, out var time)) time = new TimeOnly(3, 0);
-        var today = DateTime.Today.Add(time.ToTimeSpan());
-        if (s.LastRunAt >= today) return today.AddDays(1); // 오늘은 이미 실행함
-        return today > DateTime.Now ? today : (s.LastRunAt?.Date == DateTime.Today ? today.AddDays(1) : today);
-    }
-
-    private void UpdateNextRunText()
-    {
-        var next = GetNextRunTime();
-        TxtNextRun.Text = next == null ? "" :
-            next <= DateTime.Now ? "자동 실행: 곧 시작" : $"다음 자동 실행: {next:MM-dd HH:mm}";
-    }
-
-    // ---------- 자동 업데이트 ----------
-
-    private async Task CheckForUpdatesAsync()
-    {
-        try
-        {
-            _pendingUpdate = await _updater.CheckAsync();
-            if (_pendingUpdate != null)
-            {
-                var ver = _pendingUpdate.TargetFullRelease.Version;
-                BtnUpdate.Content = $"⬆ v{ver} 업데이트";
-                BtnUpdate.Visibility = Visibility.Visible;
-                AppendLog($"새 버전 v{ver}이(가) 있습니다. 상단 업데이트 버튼으로 설치하세요.");
-            }
-        }
-        catch { /* 오프라인/개발 모드 등 — 조용히 무시 */ }
-    }
-
-    private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
-    {
-        if (_pendingUpdate == null) return;
-        if (_syncRunning)
-        {
-            MessageBox.Show("동기화가 끝난 뒤 업데이트하세요.", "Fanbox Updater");
-            return;
-        }
-        BtnUpdate.IsEnabled = false;
-        Progress.Value = 0;
-        TxtStatus.Text = "업데이트 다운로드 중...";
-        ShowUpdateOverlay(0);
-        try
-        {
-            _reallyExit = true;
-            await _updater.DownloadAndApplyAsync(_pendingUpdate, p => Dispatcher.BeginInvoke(() =>
-            {
-                Progress.Value = p;
-                ShowUpdateOverlay(p);
-            }), beforeRestart: () => Dispatcher.Invoke(() => { _tray?.Dispose(); _tray = null; })); // 재시작하며 적용
-        }
-        catch (Exception ex)
-        {
-            UpdateOverlay.Visibility = Visibility.Collapsed;
-            BtnUpdate.IsEnabled = true;
-            BtnUpdate.Content = "업데이트";
-            Progress.Value = 0;
-            TxtStatus.Text = "대기 중";
-            _reallyExit = false;
-            MessageBox.Show($"업데이트 실패: {ex.Message}", "Fanbox Updater");
-        }
-    }
-
-    /// <summary>씹덕 감성 업데이트 오버레이 — 진행률에 따라 표정과 멘트가 바뀐다</summary>
-    private void ShowUpdateOverlay(int p)
-    {
-        UpdateOverlay.Visibility = Visibility.Visible;
-        UpdateProgress.Value = p;
-        TxtUpdatePct.Text = $"{p}%";
-        var (face, msg) = p switch
-        {
-            >= 100 => ("(ﾉ≧∀≦)ﾉ ☆", "완료! 새 모습으로 재시작할게요~"),
-            >= 70 => ("(≧▽≦)/", "거의 다 왔어요!"),
-            >= 30 => ("(ﾉ´ヮ`)ﾉ*:･ﾟ✧", "조금만 더~ 열심히 받는 중!"),
-            _ => ("(´｡• ᵕ •｡`)", "새 버전을 데려오는 중이에요..."),
-        };
-        TxtUpdateFace.Text = face;
-        TxtUpdateMsg.Text = msg;
-        TxtStatus.Text = p >= 100 ? "업데이트 적용 중 — 곧 재시작합니다" : $"업데이트 다운로드 중... {p}%";
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true }); }
+        catch (Exception ex) { ShowInfo($"열 수 없습니다: {ex.Message}"); }
     }
 
     // ---------- 로그 ----------
@@ -1090,8 +176,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void AppendLog(string msg)
     {
         var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
+        // 화면 로그는 무한정 키우지 않는다 (오래 켜 두는 트레이 앱이라 메모리·렌더링 비용이 쌓인다)
+        if (TxtLog.Text.Length > MaxLogChars)
+        {
+            var cut = TxtLog.Text.IndexOf('\n', MaxLogChars / 4);
+            TxtLog.Text = cut < 0 ? "" : TxtLog.Text[(cut + 1)..];
+        }
         TxtLog.AppendText(line + Environment.NewLine);
-        TxtLog.ScrollToEnd();
+        if (ChkAutoScroll.IsChecked == true) TxtLog.ScrollToEnd();
         try { File.AppendAllText(App.LogPath, line + Environment.NewLine); } catch { }
     }
+
+    private void BtnClearLog_Click(object sender, RoutedEventArgs e) => TxtLog.Clear();
+
+    private void BtnOpenLogFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (!File.Exists(App.LogPath)) { TxtStatusBar.Text = "아직 로그 파일이 없습니다."; return; }
+        OpenExternal(App.LogPath);
+    }
+
+    private void BtnOpenDataDir_Click(object sender, RoutedEventArgs e) => OpenExternal(App.DataDir);
 }

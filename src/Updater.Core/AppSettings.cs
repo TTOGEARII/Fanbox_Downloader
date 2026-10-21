@@ -59,12 +59,63 @@ public class AppSettings
     /// <summary>동기화에서 제외할 creatorId 목록</summary>
     public HashSet<string> DisabledCreators { get; set; } = new();
 
+    public const string FanboxProvider = "fanbox";
+
+    /// <summary>해당 프로바이더 계정 (없으면 null)</summary>
+    public AccountSettings? GetAccount(string provider)
+        => Accounts.FirstOrDefault(a => string.Equals(a.Provider, provider, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>해당 프로바이더 계정. 없으면 만들어 추가한다.</summary>
+    public AccountSettings EnsureAccount(string provider)
+    {
+        var acc = GetAccount(provider);
+        if (acc == null)
+        {
+            acc = new AccountSettings { Provider = provider };
+            Accounts.Add(acc);
+        }
+        return acc;
+    }
+
+    /// <summary>사용 가능한(켜져 있고 세션이 입력된) Fanbox 계정. 없으면 null.</summary>
+    public AccountSettings? ActiveFanboxAccount
+    {
+        get
+        {
+            var acc = GetAccount(FanboxProvider);
+            return acc is { Enabled: true } && !string.IsNullOrWhiteSpace(acc.SessionId) ? acc : null;
+        }
+    }
+
     /// <summary>이름으로 분류 찾기 (대소문자 무시)</summary>
     public CategoryRoot? FindCategory(string name)
         => CategoryRoots.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>기본 분류 이름 (첫 항목)</summary>
     public string DefaultCategory => CategoryRoots.FirstOrDefault()?.Name ?? "";
+
+    /// <summary>분류에 해당하는 저장 루트 경로. 없으면 경로가 지정된 첫 분류의 루트, 그것도 없으면 빈 문자열.</summary>
+    public string RootFor(string category)
+    {
+        var cat = FindCategory(category);
+        if (cat != null && !string.IsNullOrWhiteSpace(cat.Path)) return cat.Path;
+        return CategoryRoots.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Path))?.Path ?? "";
+    }
+
+    /// <summary>경로가 지정된 분류 루트 (같은 경로를 쓰는 분류는 한 번만). 존재하지 않는 경로는 missing에 담긴다.</summary>
+    public List<(string Root, string Category)> ExistingRoots(List<string>? missing = null)
+    {
+        var roots = new List<(string, string)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cat in CategoryRoots)
+        {
+            if (string.IsNullOrWhiteSpace(cat.Path)) continue;
+            if (!Directory.Exists(cat.Path)) { missing?.Add($"{cat.Name}: {cat.Path}"); continue; }
+            if (!seen.Add(Path.GetFullPath(cat.Path))) continue;
+            roots.Add((cat.Path, cat.Name));
+        }
+        return roots;
+    }
 
     public static AppSettings Load(string path)
     {
@@ -88,7 +139,7 @@ public class AppSettings
     }
 
     public void Save(string path)
-        => File.WriteAllText(path, JsonSerializer.Serialize(this, JsonDefaults.Options));
+        => JsonDefaults.WriteAtomic(path, JsonSerializer.Serialize(this, JsonDefaults.Options));
 }
 
 /// <summary>분류 하나 — 이름과 저장 루트 경로</summary>
@@ -125,14 +176,32 @@ public class FileTypeFilter
 
 public class ScheduleSettings
 {
+    public const string ModeDaily = "Daily";
+    public const string ModeInterval = "Interval";
+
     public bool Enabled { get; set; } = false;
     /// <summary>"Daily" 또는 "Interval"</summary>
-    public string Mode { get; set; } = "Daily";
+    public string Mode { get; set; } = ModeDaily;
     /// <summary>Daily 모드: 실행 시각 (HH:mm)</summary>
     public string DailyTime { get; set; } = "03:00";
     /// <summary>Interval 모드: 실행 간격 (시간)</summary>
     public int IntervalHours { get; set; } = 6;
     public DateTime? LastRunAt { get; set; }
+
+    /// <summary>다음 자동 실행 시각. 스케줄이 꺼져 있으면 null. now보다 과거면 '지금 실행해야 함'.</summary>
+    public DateTime? NextRunAfter(DateTime now)
+    {
+        if (!Enabled) return null;
+        if (Mode == ModeInterval)
+            return (LastRunAt ?? DateTime.MinValue).AddHours(Math.Max(1, IntervalHours));
+
+        // Daily 모드: 오늘 지정 시각. 이미 그 시각 이후에 실행했거나, 시각이 지났는데 오늘 (수동으로라도) 실행했으면 내일.
+        if (!TimeOnly.TryParse(DailyTime, out var time)) time = new TimeOnly(3, 0);
+        var today = now.Date.Add(time.ToTimeSpan());
+        if (LastRunAt >= today) return today.AddDays(1);
+        if (today > now) return today;
+        return LastRunAt?.Date == now.Date ? today.AddDays(1) : today;
+    }
 }
 
 public static class JsonDefaults
@@ -143,4 +212,14 @@ public static class JsonDefaults
         WriteIndented = true,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
+
+    /// <summary>임시 파일에 쓴 뒤 교체 — 저장 도중 종료돼도 기존 파일이 반쯤 잘린 채 남지 않게.</summary>
+    public static void WriteAtomic(string path, string content)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, content);
+        File.Move(tmp, path, overwrite: true);
+    }
 }

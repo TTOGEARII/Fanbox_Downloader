@@ -1,20 +1,22 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Updater.Core;
 
 namespace Updater.Providers.Fanbox;
 
-public class FanboxProvider : ISiteProvider
+public partial class FanboxProvider : ISiteProvider
 {
     private const string ApiBase = "https://api.fanbox.cc";
+    private const string ProviderName = "fanbox";
     private readonly HttpClient _http;
     private readonly BrowserClient _browser;
     private readonly int _delayMs;
     private readonly SemaphoreSlim _apiLock = new(1); // API 호출 직렬화 + 간격 제한
     private DateTime _lastRequest = DateTime.MinValue;
 
-    public string Name => "fanbox";
+    public string Name => ProviderName;
 
     public FanboxProvider(string sessionId, int requestDelayMs, string userDataFolder)
     {
@@ -90,16 +92,17 @@ public class FanboxProvider : ISiteProvider
         return result.Values.ToList();
     }
 
-    private void AddCreator(Dictionary<string, CreatorInfo> map, JsonElement el)
+    private static void AddCreator(Dictionary<string, CreatorInfo> map, JsonElement el)
     {
         var id = el.TryGetProperty("creatorId", out var cid) ? cid.GetString() : null;
         if (string.IsNullOrEmpty(id)) return;
         var name = el.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object
                    && u.TryGetProperty("name", out var n) ? n.GetString() : null;
-        map[id] = new CreatorInfo(Name, id, name ?? id);
+        map[id] = new CreatorInfo(ProviderName, id, name ?? id);
     }
 
-    public async Task<List<RemotePost>> GetPostsAsync(string creatorId, CancellationToken ct)
+    public async Task<List<RemotePost>> GetPostsAsync(string creatorId, CancellationToken ct,
+        Func<RemotePost, bool>? isSettled = null)
     {
         var posts = new List<RemotePost>();
         var pagesJson = await GetStringAsync(
@@ -109,20 +112,29 @@ public class FanboxProvider : ISiteProvider
             foreach (var u in BodyArray(doc, "pageUrls"))
                 if (u.GetString() is { } s) pageUrls.Add(s);
 
+        // 페이지는 최신 → 과거 순. 한 페이지가 전부 처리된 게시물이면 그보다 오래된 페이지도 처리된 것으로 보고 중단한다.
         foreach (var pageUrl in pageUrls)
         {
             var pageJson = await GetStringAsync(pageUrl, ct);
-            using var doc = JsonDocument.Parse(pageJson);
-            foreach (var p in BodyArray(doc, "posts"))
+            bool allSettled = isSettled != null;
+            int pageCount = 0;
+            using (var doc = JsonDocument.Parse(pageJson))
             {
-                var id = p.GetProperty("id").GetString() ?? "";
-                var title = p.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
-                var published = ParseDate(p, "publishedDatetime");
-                var restricted = p.TryGetProperty("isRestricted", out var r) && r.GetBoolean();
-                var fee = p.TryGetProperty("feeRequired", out var fr) && fr.ValueKind == JsonValueKind.Number
-                    ? fr.GetInt32() : 0;
-                posts.Add(new RemotePost(creatorId, id, title, published, !restricted, fee));
+                foreach (var p in BodyArray(doc, "posts"))
+                {
+                    var id = p.GetProperty("id").GetString() ?? "";
+                    var title = p.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    var published = ParseDate(p, "publishedDatetime");
+                    var restricted = p.TryGetProperty("isRestricted", out var r) && r.GetBoolean();
+                    var fee = p.TryGetProperty("feeRequired", out var fr) && fr.ValueKind == JsonValueKind.Number
+                        ? fr.GetInt32() : 0;
+                    var post = new RemotePost(creatorId, id, title, published, !restricted, fee);
+                    posts.Add(post);
+                    pageCount++;
+                    if (allSettled && !isSettled!(post)) allSettled = false;
+                }
             }
+            if (allSettled && pageCount > 0) break;
         }
         return posts;
     }
@@ -152,6 +164,11 @@ public class FanboxProvider : ISiteProvider
 
         int index = 0;
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void AddLink(string? url)
+        {
+            if (!string.IsNullOrEmpty(url) && seenLinks.Add(url)) content.ExternalLinks.Add(url);
+        }
 
         // image / file 타입 게시물 (같은 URL 중복 추가 방지)
         if (pb.TryGetProperty("images", out var images) && images.ValueKind == JsonValueKind.Array)
@@ -177,9 +194,8 @@ public class FanboxProvider : ISiteProvider
                         // 본문 텍스트에 걸린 하이퍼링크 수집 (외부 호스트 배포 대응)
                         if (block.TryGetProperty("links", out var lks) && lks.ValueKind == JsonValueKind.Array)
                             foreach (var lk in lks.EnumerateArray())
-                                if (lk.TryGetProperty("url", out var lu) && lu.GetString() is { Length: > 0 } lus
-                                    && !content.ExternalLinks.Contains(lus))
-                                    content.ExternalLinks.Add(lus);
+                                if (lk.TryGetProperty("url", out var lu))
+                                    AddLink(lu.GetString());
                         break;
                     case "image":
                         if (block.TryGetProperty("imageId", out var iid) && iid.GetString() is { } iids
@@ -207,17 +223,19 @@ public class FanboxProvider : ISiteProvider
                 else if (entry.Value.TryGetProperty("html", out var eh) && eh.GetString() is { } html)
                 {
                     // 링크 카드는 iframe src= 또는 a href= 로 들어 있음
-                    var mm = System.Text.RegularExpressions.Regex.Match(html, "(?:src|href)=\"(https?://[^\"]+)\"");
-                    if (mm.Success) url = System.Net.WebUtility.HtmlDecode(mm.Groups[1].Value);
+                    var mm = EmbedUrlRegex().Match(html);
+                    if (mm.Success) url = WebUtility.HtmlDecode(mm.Groups[1].Value);
                 }
-                if (!string.IsNullOrEmpty(url) && !content.ExternalLinks.Contains(url))
-                    content.ExternalLinks.Add(url);
+                AddLink(url);
             }
         }
 
         if (texts.Count > 0) content.Text = string.Join("\n", texts);
         return content;
     }
+
+    [GeneratedRegex("(?:src|href)=\"(https?://[^\"]+)\"")]
+    private static partial Regex EmbedUrlRegex();
 
     private static void AddImage(PostContent content, JsonElement img, int index, HashSet<string> seen)
     {
@@ -273,7 +291,7 @@ public class FanboxProvider : ISiteProvider
     private static IEnumerable<JsonElement> BodyArray(JsonDocument doc, string prop)
     {
         if (!doc.RootElement.TryGetProperty("body", out var body)) yield break;
-        JsonElement arr = default;
+        JsonElement arr;
         if (body.ValueKind == JsonValueKind.Array) arr = body;
         else if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty(prop, out var inner)
                  && inner.ValueKind == JsonValueKind.Array) arr = inner;

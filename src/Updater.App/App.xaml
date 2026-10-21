@@ -45,13 +45,22 @@
             <Style TargetType="TextBlock" x:Key="SectionTitle">
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="FontSize" Value="15"/>
-                <Setter Property="Margin" Value="0,16,0,8"/>
+                <Setter Property="Margin" Value="0,0,0,10"/>
             </Style>
             <Style TargetType="TextBlock" x:Key="HintText">
                 <Setter Property="Foreground" Value="#9A9A9A"/>
                 <Setter Property="FontSize" Value="11.5"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
-                <Setter Property="Margin" Value="0,2,0,10"/>
+                <Setter Property="Margin" Value="0,2,0,8"/>
+            </Style>
+            <!-- 설정 탭 섹션 카드 -->
+            <Style TargetType="Border" x:Key="SettingsCard">
+                <Setter Property="Background" Value="#10FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#1EFFFFFF"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="18,14,18,12"/>
+                <Setter Property="Margin" Value="0,0,0,12"/>
             </Style>
         </ResourceDictionary>
     </Application.Resources>
