@@ -217,15 +217,32 @@ public class SyncEngine
         var content = await provider.GetPostContentAsync(post, ct);
         if (content == null) return false;
 
-        var dirName = NameSanitizer.Sanitize(_settings.FolderNameTemplate
+        string Fill(string template) => template
             .Replace("{date}", content.PublishedAt.ToString(_settings.DateFormat))
             .Replace("{title}", content.Title)
             .Replace("{id}", post.PostId)
-            .Replace("{creator}", post.CreatorId)).TrimEnd('.', ' ');
+            .Replace("{creator}", CreatorIds.LocalId(post.CreatorId));
+        var dirName = NameSanitizer.Sanitize(Fill(_settings.FolderNameTemplate)).TrimEnd('.', ' ');
         if (string.IsNullOrWhiteSpace(dirName)) dirName = $"post_{post.PostId}";
 
         var site = _settings.Site(m.Provider);
         var items = content.Items.Where(i => site.FileTypes.Allows(i.Kind)).ToList();
+
+        // 평평하게 저장: 게시물 폴더 없이 작가 폴더에 "{title}_{index}.ext" 꼴로 바로 저장 (사이트 옵션)
+        var flat = site.FlatFiles;
+        if (flat)
+        {
+            var template = string.IsNullOrWhiteSpace(site.FlatFileNameTemplate) ? "{title}_{index}" : site.FlatFileNameTemplate;
+            var baseName = Fill(template);
+            var width = Math.Max(2, items.Count.ToString().Length);
+            items = items.Select((item, i) =>
+            {
+                var ext = Path.GetExtension(item.FileName);
+                var name = NameSanitizer.Sanitize(baseName.Replace("{index}", (i + 1).ToString().PadLeft(width, '0'))).TrimEnd('.', ' ');
+                if (string.IsNullOrWhiteSpace(name)) name = $"{post.PostId}_{i + 1:D2}";
+                return item with { FileName = name + ext };
+            }).ToList();
+        }
 
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
         // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 사이트 설정 ('일러 분리' 체크된 분류에만 적용)
@@ -242,12 +259,12 @@ public class SyncEngine
                 root = site.IllustRoot;
         }
         var isIllust = root != categoryRoot;
-        var postDir = Path.Combine(root, m.FolderName, dirName);
+        var postDir = flat ? Path.Combine(root, m.FolderName) : Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 
-        Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" + (isIllust ? " (일러스트)" : ""));
+        Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" + (isIllust ? " (일러스트)" : "") + (flat ? $" → 파일 {items.Count}개" : ""));
         if (site.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
-            items.Add(new DownloadItem(content.CoverImageUrl!, "cover.jpg", FileKind.Image));
+            items.Add(new DownloadItem(content.CoverImageUrl!, flat ? $"{dirName}_cover.jpg" : "cover.jpg", FileKind.Image));
 
         // 파일 병렬 다운로드 (API 호출과 달리 파일 서버는 병렬 허용)
         using var gate = new SemaphoreSlim(Math.Max(1, _settings.MaxParallelDownloads));
@@ -297,10 +314,11 @@ public class SyncEngine
                 sb.AppendLine("── 외부 링크 ──");
                 foreach (var note in externalNotes) sb.AppendLine(note);
             }
-            await File.WriteAllTextAsync(Path.Combine(postDir, "post.txt"), sb.ToString(), ct);
+            // 평평하게 저장할 때는 게시물마다 글 파일 이름이 겹치지 않게 폴더 이름 규칙으로 짓는다
+            await File.WriteAllTextAsync(Path.Combine(postDir, flat ? $"{dirName}.txt" : "post.txt"), sb.ToString(), ct);
         }
 
-        if (!Directory.EnumerateFileSystemEntries(postDir).Any())
+        if (!flat && !Directory.EnumerateFileSystemEntries(postDir).Any())
             Directory.Delete(postDir); // 받을 것이 없던 게시물 — 빈 폴더 정리
         return true;
     }

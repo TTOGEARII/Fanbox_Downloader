@@ -89,6 +89,8 @@ public partial class MainWindow
             ChkPaid.IsChecked = site.DownloadPaid;
             ChkFree.IsChecked = site.DownloadFree;
             TxtPostFilterHint.Text = info.PostHint;
+            ChkFlat.IsChecked = site.FlatFiles;
+            TxtFlatTemplate.Text = site.FlatFileNameTemplate;
             ChkSaveText.IsChecked = site.SaveText;
             ChkCover.IsChecked = site.DownloadCoverImage;
             ChkAutoCreate.IsChecked = site.AutoCreateFolders;
@@ -150,6 +152,8 @@ public partial class MainWindow
         current.IllustMaxImages = ParseClamped(TxtIllustMax.Text, 1, 50, 4);
         current.DownloadPaid = ChkPaid.IsChecked == true;
         current.DownloadFree = ChkFree.IsChecked == true;
+        current.FlatFiles = ChkFlat.IsChecked == true;
+        current.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
         current.SaveText = ChkSaveText.IsChecked == true;
         current.DownloadCoverImage = ChkCover.IsChecked == true;
         current.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
@@ -203,7 +207,7 @@ public partial class MainWindow
     {
         foreach (var toggle in new ToggleButton[]
                  {
-                     ChkPaid, ChkFree, ChkSaveText, ChkCover, ChkAutoCreate, ChkExternal, ChkAutoExtract,
+                     ChkPaid, ChkFree, ChkFlat, ChkSaveText, ChkCover, ChkAutoCreate, ChkExternal, ChkAutoExtract,
                      ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
                      ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
                  })
@@ -213,7 +217,7 @@ public partial class MainWindow
         }
         foreach (var tb in new Control[]
                  {
-                     PwdSession, TxtIllustRoot, TxtIllustMax, TxtTemplate, TxtDateFormat,
+                     PwdSession, TxtIllustRoot, TxtIllustMax, TxtFlatTemplate, TxtTemplate, TxtDateFormat,
                      TxtParallel, TxtDailyTime, TxtIntervalHours,
                  })
             tb.LostFocus += (_, _) => QueueAutoApply();

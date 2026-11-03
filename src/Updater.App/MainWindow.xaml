@@ -322,6 +322,14 @@
                                     <CheckBox x:Name="ChkFree" Margin="0,2,18,2" FontWeight="SemiBold">무료(공개) 게시물 받기</CheckBox>
                                 </WrapPanel>
                                 <TextBlock x:Name="TxtPostFilterHint" Style="{StaticResource HintText}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <CheckBox x:Name="ChkFlat" VerticalAlignment="Center">게시물 폴더 없이 작가 폴더에 파일을 바로 저장 — 파일명</CheckBox>
+                                    <ui:TextBox x:Name="TxtFlatTemplate" Width="170" Margin="8,0,0,0" FontSize="12"
+                                                IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
+                                                ToolTip="{}{title}=제목, {index}=파일 순번, {id}=게시물번호, {date}=날짜, {creator}=작가ID (확장자는 자동)"/>
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource HintText}"
+                                           Text="예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다."/>
                                 <WrapPanel Margin="0,6,0,0">
                                     <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                                     <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>

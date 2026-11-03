@@ -220,6 +220,11 @@ public class SiteSettings
     /// <summary>무료(공개) 게시물을 받는다</summary>
     public bool DownloadFree { get; set; } = false;
 
+    /// <summary>true면 게시물마다 폴더를 만들지 않고 작가 폴더에 파일을 바로 저장한다 (파일명은 <see cref="FlatFileNameTemplate"/>)</summary>
+    public bool FlatFiles { get; set; } = false;
+    /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
+    public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
+
     public bool SaveText { get; set; } = true;
     public bool DownloadCoverImage { get; set; } = false;
     public bool AutoCreateFolders { get; set; } = false;
