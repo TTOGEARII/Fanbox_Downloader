@@ -53,6 +53,8 @@ public partial class MainWindow
         TxtTemplate.Text = _settings.FolderNameTemplate;
         TxtDateFormat.Text = _settings.DateFormat;
         TxtParallel.Text = _settings.MaxParallelDownloads.ToString();
+        ChkFlat.IsChecked = _settings.FlatFiles;
+        TxtFlatTemplate.Text = _settings.FlatFileNameTemplate;
         ChkFlatIllustOnly.IsChecked = _settings.FlatIllustOnly;
         ChkSchedule.IsChecked = _settings.Schedule.Enabled;
         RadDaily.IsChecked = _settings.Schedule.Mode == ScheduleSettings.ModeDaily;
@@ -90,8 +92,6 @@ public partial class MainWindow
             ChkPaid.IsChecked = site.DownloadPaid;
             ChkFree.IsChecked = site.DownloadFree;
             TxtPostFilterHint.Text = info.PostHint;
-            ChkFlat.IsChecked = site.FlatFiles;
-            TxtFlatTemplate.Text = site.FlatFileNameTemplate;
             ChkSaveText.IsChecked = site.SaveText;
             ChkCover.IsChecked = site.DownloadCoverImage;
             ChkAutoCreate.IsChecked = site.AutoCreateFolders;
@@ -153,8 +153,6 @@ public partial class MainWindow
         current.IllustMaxImages = ParseClamped(TxtIllustMax.Text, 1, 50, 4);
         current.DownloadPaid = ChkPaid.IsChecked == true;
         current.DownloadFree = ChkFree.IsChecked == true;
-        current.FlatFiles = ChkFlat.IsChecked == true;
-        current.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
         current.SaveText = ChkSaveText.IsChecked == true;
         current.DownloadCoverImage = ChkCover.IsChecked == true;
         current.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
@@ -170,6 +168,8 @@ public partial class MainWindow
         _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
         _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
         _settings.MaxParallelDownloads = ParseClamped(TxtParallel.Text, 1, 8, 3);
+        _settings.FlatFiles = ChkFlat.IsChecked == true;
+        _settings.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
         _settings.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         _settings.Schedule.Enabled = ChkSchedule.IsChecked == true;
         _settings.Schedule.Mode = RadInterval.IsChecked == true ? ScheduleSettings.ModeInterval : ScheduleSettings.ModeDaily;

@@ -250,10 +250,16 @@
                                         <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0" Text="1~8. 한 게시물 안의 파일을 동시에 받는 수"/>
                                     </StackPanel>
                                 </Grid>
-                                <CheckBox x:Name="ChkFlatIllustOnly" Margin="0,8,0,0"
-                                          ToolTip="사이트별 '게시물 폴더 없이 작가 폴더에 바로 저장'을 켠 사이트에서, 일러스트 저장 경로로 분리되는 낱장 일러 게시물에만 적용하고 그 밖의 게시물은 평소처럼 게시물 폴더로 저장">평평 저장은 일러스트(분리 저장) 게시물만 적용 — 나머지는 게시물 폴더로</CheckBox>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <CheckBox x:Name="ChkFlat" VerticalAlignment="Center" FontWeight="SemiBold">게시물 폴더 없이 작가 폴더에 파일을 바로 저장 — 파일명</CheckBox>
+                                    <ui:TextBox x:Name="TxtFlatTemplate" Width="170" Margin="8,0,0,0" FontSize="12"
+                                                IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
+                                                ToolTip="{}{title}=제목, {index}=파일 순번, {id}=게시물번호, {date}=날짜, {creator}=작가ID (확장자는 자동)"/>
+                                </StackPanel>
+                                <CheckBox x:Name="ChkFlatIllustOnly" Margin="24,4,0,0" IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
+                                          ToolTip="일러스트 저장 경로로 분리되는 낱장 일러 게시물에만 적용하고 그 밖의 게시물은 평소처럼 게시물 폴더로 저장">일러스트(분리 저장) 게시물만 적용 — 나머지는 게시물 폴더로</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
-                                           Text="모든 사이트에 한 번에 적용됩니다. 각 사이트의 '게시물 폴더 없이 작가 폴더에 바로 저장'이 켜져 있을 때만 의미가 있습니다."/>
+                                           Text="모든 사이트에 적용됩니다. 예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다."/>
                             </StackPanel>
                         </Border>
 
@@ -378,14 +384,6 @@
                                     <CheckBox x:Name="ChkFree" Margin="0,2,18,2" FontWeight="SemiBold">무료(공개) 게시물 받기</CheckBox>
                                 </WrapPanel>
                                 <TextBlock x:Name="TxtPostFilterHint" Style="{StaticResource HintText}"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                    <CheckBox x:Name="ChkFlat" VerticalAlignment="Center">게시물 폴더 없이 작가 폴더에 파일을 바로 저장 — 파일명</CheckBox>
-                                    <ui:TextBox x:Name="TxtFlatTemplate" Width="170" Margin="8,0,0,0" FontSize="12"
-                                                IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
-                                                ToolTip="{}{title}=제목, {index}=파일 순번, {id}=게시물번호, {date}=날짜, {creator}=작가ID (확장자는 자동)"/>
-                                </StackPanel>
-                                <TextBlock Style="{StaticResource HintText}"
-                                           Text="예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다. 일러스트 게시물만 평평하게 받으려면 위 공통 설정의 '일러스트 게시물만 적용'을 켜세요."/>
                                 <WrapPanel Margin="0,6,0,0">
                                     <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                                     <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>

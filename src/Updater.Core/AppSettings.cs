@@ -23,8 +23,11 @@ public class AppSettings
     public string FolderNameTemplate { get; set; } = "{date} {title}";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
 
-    /// <summary>(공통) 사이트의 '평평 저장'(SiteSettings.FlatFiles)을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고,
-    /// 나머지 게시물은 폴더로 저장. 모든 사이트에 한 번에 적용된다.</summary>
+    /// <summary>(공통) true면 게시물마다 폴더를 만들지 않고 작가 폴더에 파일을 바로 저장한다 (파일명은 <see cref="FlatFileNameTemplate"/>)</summary>
+    public bool FlatFiles { get; set; } = false;
+    /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
+    public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
+    /// <summary>(공통) 평평 저장을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고, 나머지 게시물은 폴더로 저장</summary>
     public bool FlatIllustOnly { get; set; } = false;
 
     public ScheduleSettings Schedule { get; set; } = new();
@@ -129,11 +132,18 @@ public class AppSettings
         foreach (var (key, site) in s.Sites)
         {
             site.Provider = key.ToLowerInvariant();
-            // 한때 사이트별이었던 '일러스트 게시물만 평평 저장' → 공통 설정으로 (하나라도 켜져 있었으면 켬)
+            // 한때 사이트별이었던 평평 저장 옵션들 → 공통 설정으로 (하나라도 켜져 있었으면 켬, 규칙은 켜져 있던 사이트 것)
             if (site.Legacy != null)
             {
                 if (site.Legacy.TryGetValue("FlatIllustOnly", out var v) && v.ValueKind == JsonValueKind.True)
                     s.FlatIllustOnly = true;
+                if (site.Legacy.TryGetValue("FlatFiles", out var ff) && ff.ValueKind == JsonValueKind.True)
+                {
+                    s.FlatFiles = true;
+                    if (site.Legacy.TryGetValue("FlatFileNameTemplate", out var t) && t.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(t.GetString()))
+                        s.FlatFileNameTemplate = t.GetString()!;
+                }
                 site.Legacy = null;
             }
         }
@@ -234,12 +244,7 @@ public class SiteSettings
     /// <summary>무료(공개) 게시물을 받는다</summary>
     public bool DownloadFree { get; set; } = false;
 
-    /// <summary>true면 게시물마다 폴더를 만들지 않고 작가 폴더에 파일을 바로 저장한다 (파일명은 <see cref="FlatFileNameTemplate"/>)</summary>
-    public bool FlatFiles { get; set; } = false;
-    /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
-    public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
-
-    /// <summary>구버전(사이트별 FlatIllustOnly 등) 키 — Load()에서 공통 설정으로 이전한 뒤 비운다</summary>
+    /// <summary>구버전(사이트별 FlatFiles·FlatFileNameTemplate·FlatIllustOnly) 키 — Load()에서 공통 설정으로 이전한 뒤 비운다</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Legacy { get; set; }
 
