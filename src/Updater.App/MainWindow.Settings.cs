@@ -22,7 +22,7 @@ public partial class MainWindow
         _categoryRows.Clear();
         foreach (var c in _settings.CategoryRoots)
         {
-            var row = new CategoryRow { Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust };
+            var row = new CategoryRow { Provider = c.Provider.ToLowerInvariant(), Name = c.Name, Path = c.Path, SplitIllust = c.SplitIllust };
             HookCategoryRow(row);
             _categoryRows.Add(row);
         }
@@ -63,18 +63,20 @@ public partial class MainWindow
     /// interactive=false면 경고창 없이 조용히 넘어가고, 분류 루트가 바뀐 경우에만 작가 목록을 재스캔한다.</summary>
     private void ApplySettings(bool interactive)
     {
-        // 분류 그리드 → 설정. 자동 반영 중에는 일시적으로 이름이 비거나 중복될 수 있어 조용히 거른다 (첫 번째 우선)
+        // 분류 그리드 → 설정. 자동 반영 중에는 일시적으로 이름이 비거나 중복될 수 있어 조용히 거른다 (첫 번째 우선).
+        // 분류 이름은 같은 사이트 안에서만 유일하면 된다 (FANBOX '영상'과 Patreon '영상'은 별개)
         var cats = _categoryRows
-            .Select(r => new CategoryRoot { Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
+            .Select(r => new CategoryRoot { Provider = r.Provider, Name = r.Name.Trim(), Path = r.Path.Trim(), SplitIllust = r.SplitIllust })
             .Where(c => !string.IsNullOrEmpty(c.Name))
             .ToList();
         var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var dupCount = cats.RemoveAll(c => !seenNames.Add(c.Name));
+        var dupCount = cats.RemoveAll(c => !seenNames.Add(c.Provider + "|" + c.Name));
         if (interactive)
         {
             if (cats.Count == 0) { ShowInfo("저장 분류를 최소 1개 입력하세요."); return; }
-            if (dupCount > 0) { ShowInfo("분류 이름이 중복되었습니다."); return; }
+            if (dupCount > 0) { ShowInfo("같은 사이트 안에 분류 이름이 중복되었습니다."); return; }
         }
+        _settings.SelectedSite = _site;
 
         // 계정 쿠키 — 바뀐 사이트의 프로바이더만 다시 띄우게 기록
         var changedSessions = new List<string>();
@@ -91,8 +93,8 @@ public partial class MainWindow
         var rootsChanged = false;
         if (cats.Count > 0) // 자동 반영 중 전부 지워진 순간은 기존 분류를 유지 (최소 1개 필요)
         {
-            rootsChanged = !cats.Select(c => $"{c.Name}|{c.Path}").SequenceEqual(
-                _settings.CategoryRoots.Select(c => $"{c.Name}|{c.Path}"), StringComparer.OrdinalIgnoreCase);
+            rootsChanged = !cats.Select(c => $"{c.Provider}|{c.Name}|{c.Path}").SequenceEqual(
+                _settings.CategoryRoots.Select(c => $"{c.Provider}|{c.Name}|{c.Path}"), StringComparer.OrdinalIgnoreCase);
             _settings.CategoryRoots = cats;
         }
 
@@ -167,23 +169,25 @@ public partial class MainWindow
             tb.LostFocus += (_, _) => QueueAutoApply();
     }
 
-    /// <summary>처음 쓸 때 안내 배너 — 쿠키나 저장 경로가 없으면 무엇을 해야 하는지 보여준다.</summary>
+    /// <summary>처음 쓸 때 안내 배너 (현재 사이트 기준) — 쿠키나 저장 경로가 없으면 무엇을 해야 하는지 보여준다.</summary>
     private void UpdateSetupBanner()
     {
         string? title = null, msg = null;
-        if (_settings.ActiveAccounts.Count == 0)
+        var label = CreatorIds.ProviderLabel(_site);
+        var cookie = _site == AppSettings.PatreonProvider ? "session_id" : "FANBOXSESSID";
+        if (_settings.ActiveAccount(_site) == null)
         {
-            title = "1단계 · 사이트 쿠키를 입력하세요";
-            msg = "설정 탭 → 계정에 브라우저의 FANBOXSESSID(FANBOX) 또는 session_id(Patreon) 쿠키 값을 넣으면 팔로우/후원 작가 목록을 가져올 수 있습니다.";
+            title = $"1단계 · {label} 쿠키를 입력하세요";
+            msg = $"설정 탭 → 계정에 브라우저의 {cookie} 쿠키 값을 넣으면 {label} 팔로우/후원 작가 목록을 가져올 수 있습니다. (다른 사이트만 쓸 거면 위의 사이트 버튼으로 바꾸세요)";
         }
-        else if (_settings.ExistingRoots().Count == 0)
+        else if (_settings.ExistingRoots(_site).Count == 0)
         {
-            title = "2단계 · 저장 폴더를 지정하세요";
-            msg = "설정 탭 → 저장 분류에서 게시물을 받을 폴더를 고르세요. 그 폴더 바로 아래 하위 폴더가 작가 폴더가 됩니다.";
+            title = $"2단계 · {label} 저장 폴더를 지정하세요";
+            msg = $"설정 탭 → 저장 분류에서 사이트를 {label}로 한 분류를 추가하고 게시물을 받을 폴더를 고르세요. 그 폴더 바로 아래 하위 폴더가 작가 폴더가 됩니다.";
         }
-        else if (_artists.Count == 0 && !_settings.AutoCreateFolders)
+        else if (!SiteRows().Any() && !_settings.AutoCreateFolders)
         {
-            title = "3단계 · 작가 폴더를 만드세요";
+            title = $"3단계 · {label} 작가 폴더를 만드세요";
             msg = "저장 폴더 안에 작가별 폴더를 만들거나, 설정 탭의 '폴더 없는 팔로우 작가도 자동 생성'을 켜고 [작가 목록 새로고침]을 누르세요.";
         }
         SetupBanner.Visibility = title == null ? Visibility.Collapsed : Visibility.Visible;
@@ -217,7 +221,8 @@ public partial class MainWindow
         {
             var creators = await FetchCreatorsAsync(onlyProvider: provider);
             if (creators == null) return;
-            ApplyMatches(new SyncEngine(_settings, _state, SaveState).MatchFolders(creators));
+            ApplyMatchesForFetchedSites(creators);
+            SelectSite(provider); // 확인한 사이트의 작가 탭을 바로 보여준다
             TxtStatus.Text = "대기 중";
             var count = creators.Count(c => string.Equals(c.Provider, provider, StringComparison.OrdinalIgnoreCase));
             ShowInfo($"{label} 로그인 성공 — 팔로우/후원 작가 {count}명을 확인했습니다.");
@@ -233,16 +238,24 @@ public partial class MainWindow
 
     // ---------- 분류 그리드 ----------
 
-    /// <summary>분류 콤보박스(작가 그리드·필터)를 분류 그리드 내용으로 갱신 — 분류 입력 즉시 반영</summary>
+    /// <summary>사이트별 분류 콤보박스(작가 그리드·필터)를 분류 그리드 내용으로 갱신 — 분류 입력 즉시 반영.
+    /// 작가 탭 필터 콤보는 현재 사이트의 분류만 보여준다.</summary>
     private void RefreshCategoryUi()
     {
-        Categories.Clear();
-        foreach (var r in _categoryRows.Where(r => !string.IsNullOrWhiteSpace(r.Name)))
-            if (!Categories.Contains(r.Name)) Categories.Add(r.Name);
+        foreach (var site in ProviderRegistry.SupportedProviders)
+        {
+            var list = CategoriesFor(site);
+            var names = _categoryRows
+                .Where(r => r.Provider.Equals(site, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(r.Name))
+                .Select(r => r.Name).Distinct().ToList();
+            if (list.SequenceEqual(names)) continue;
+            list.Clear();
+            foreach (var n in names) list.Add(n);
+        }
 
         var selected = CmbFilter.SelectedItem as string ?? FilterAll;
         var items = new List<string> { FilterAll };
-        items.AddRange(Categories);
+        items.AddRange(CategoriesFor(_site));
         items.Add(FilterUnmatched);
         CmbFilter.ItemsSource = items;
         CmbFilter.SelectedItem = items.Contains(selected) ? selected : FilterAll;
@@ -252,15 +265,16 @@ public partial class MainWindow
     {
         row.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(CategoryRow.Name)) RefreshCategoryUi();
-            if (e.PropertyName is nameof(CategoryRow.Name) or nameof(CategoryRow.Path) or nameof(CategoryRow.SplitIllust))
+            if (e.PropertyName is nameof(CategoryRow.Name) or nameof(CategoryRow.Provider)) RefreshCategoryUi();
+            if (e.PropertyName is nameof(CategoryRow.Name) or nameof(CategoryRow.Provider)
+                or nameof(CategoryRow.Path) or nameof(CategoryRow.SplitIllust))
                 QueueAutoApply();
         };
     }
 
     private void BtnAddCategory_Click(object sender, RoutedEventArgs e)
     {
-        var row = new CategoryRow();
+        var row = new CategoryRow { Provider = _site }; // 작가 탭에서 보고 있던 사이트가 기본
         HookCategoryRow(row);
         _categoryRows.Add(row);
         // 새 줄에서 바로 경로를 고를 수 있게 폴더 선택을 띄움

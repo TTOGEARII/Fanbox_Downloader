@@ -11,7 +11,8 @@ public class SyncSummary
     public bool Cancelled;
 }
 
-public record FolderMatch(string FolderName, string? CreatorId, string? CreatorName, string Category);
+/// <param name="Provider">폴더가 놓인 분류 루트의 사이트 — 이 사이트의 작가와만 매칭된다</param>
+public record FolderMatch(string Provider, string FolderName, string? CreatorId, string? CreatorName, string Category);
 
 /// <summary>사이트 독립적 동기화 엔진. 폴더 매칭 → 신규 게시물 탐색 → 다운로드.</summary>
 public class SyncEngine
@@ -35,37 +36,46 @@ public class SyncEngine
         _saveState = saveState;
     }
 
-    /// <summary>모든 분류 루트의 폴더와 작가 목록을 매칭한다.</summary>
-    public List<FolderMatch> MatchFolders(List<CreatorInfo> creators)
+    /// <summary>모든 분류 루트의 폴더와 작가 목록을 매칭한다. 사이트별로 완전히 분리 —
+    /// 어떤 사이트의 분류 루트에 있는 폴더는 그 사이트의 작가와만 매칭되고, 수동 매핑도 사이트별 키로 찾는다.</summary>
+    /// <param name="onlyProvider">지정하면 그 사이트의 분류 루트만 (작가 목록 캐시가 그 사이트만 갱신됐을 때)</param>
+    public List<FolderMatch> MatchFolders(List<CreatorInfo> creators, string? onlyProvider = null)
     {
         var result = new List<FolderMatch>();
         var byId = creators.ToDictionary(c => c.CreatorId, StringComparer.OrdinalIgnoreCase);
-        // 정규화 키는 작가당 한 번만 계산 (폴더 수 × 작가 수만큼 반복하지 않게)
-        var keyed = creators.Select(c => (Creator: c, Id: Normalize(c.CreatorId), Name: Normalize(c.DisplayName))).ToList();
+        // 정규화 키는 작가당 한 번만 계산 (폴더 수 × 작가 수만큼 반복하지 않게). 매칭 대상은 같은 사이트의 작가뿐
+        var keyedBySite = creators
+            .GroupBy(c => c.Provider, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key,
+                g => g.Select(c => (Creator: c, Id: Normalize(CreatorIds.LocalId(c.CreatorId)), Name: Normalize(c.DisplayName))).ToList(),
+                StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (root, category) in _settings.ExistingRoots())
-        foreach (var dir in Directory.GetDirectories(root))
+        foreach (var (root, category, provider) in _settings.ExistingRoots(onlyProvider))
         {
-            var folder = Path.GetFileName(dir);
-            // 1순위: 수동 매핑
-            if (_settings.Mapping.TryGetValue(folder, out var mapped) && !string.IsNullOrWhiteSpace(mapped))
+            var keyed = keyedBySite.GetValueOrDefault(provider) ?? new();
+            foreach (var dir in Directory.GetDirectories(root))
             {
-                result.Add(new FolderMatch(folder, mapped,
-                    byId.TryGetValue(mapped, out var c) ? c.DisplayName : mapped, category));
-                continue;
+                var folder = Path.GetFileName(dir);
+                // 1순위: 수동 매핑 (사이트별 키)
+                if (_settings.Mapping.TryGetValue(CreatorIds.FolderKey(provider, folder), out var mapped) && !string.IsNullOrWhiteSpace(mapped))
+                {
+                    result.Add(new FolderMatch(provider, folder, mapped,
+                        byId.TryGetValue(mapped, out var c) ? c.DisplayName : mapped, category));
+                    continue;
+                }
+                // 2순위: 이름/아이디 자동 매칭 (완전 일치 우선, 부분 일치는 4자 이상일 때만)
+                var key = Normalize(folder);
+                var hit = keyed.FirstOrDefault(k => k.Id == key || k.Name == key).Creator
+                       ?? keyed.FirstOrDefault(k =>
+                              SafeContains(k.Id, key) || SafeContains(k.Name, key) ||
+                              SafeContains(key, k.Id) || SafeContains(key, k.Name)).Creator;
+                result.Add(hit != null
+                    ? new FolderMatch(provider, folder, hit.CreatorId, hit.DisplayName, category)
+                    : new FolderMatch(provider, folder, null, null, category));
             }
-            // 2순위: 이름/아이디 자동 매칭 (완전 일치 우선, 부분 일치는 4자 이상일 때만)
-            var key = Normalize(folder);
-            var hit = keyed.FirstOrDefault(k => k.Id == key || k.Name == key).Creator
-                   ?? keyed.FirstOrDefault(k =>
-                          SafeContains(k.Id, key) || SafeContains(k.Name, key) ||
-                          SafeContains(key, k.Id) || SafeContains(key, k.Name)).Creator;
-            result.Add(hit != null
-                ? new FolderMatch(folder, hit.CreatorId, hit.DisplayName, category)
-                : new FolderMatch(folder, null, null, category));
         }
 
-        // 옵션: 폴더가 없는 팔로우 작가도 자동으로 폴더를 만들어 대상에 포함
+        // 옵션: 폴더가 없는 팔로우 작가도 자동으로 폴더를 만들어 대상에 포함 (그 사이트에 분류 루트가 있을 때만)
         if (_settings.AutoCreateFolders)
         {
             var mappedIds = new HashSet<string>(
@@ -73,8 +83,10 @@ public class SyncEngine
                 StringComparer.OrdinalIgnoreCase);
             foreach (var c in creators.Where(c => !mappedIds.Contains(c.CreatorId)))
             {
-                var category = _settings.CreatorCategories.GetValueOrDefault(c.CreatorId, _settings.DefaultCategory);
-                result.Add(new FolderMatch(NameSanitizer.Sanitize(c.DisplayName), c.CreatorId, c.DisplayName, category));
+                if (onlyProvider != null && !string.Equals(c.Provider, onlyProvider, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.IsNullOrEmpty(_settings.RootFor(c.Provider, ""))) continue;
+                var category = _settings.CreatorCategories.GetValueOrDefault(c.CreatorId, _settings.DefaultCategory(c.Provider));
+                result.Add(new FolderMatch(c.Provider, NameSanitizer.Sanitize(c.DisplayName), c.CreatorId, c.DisplayName, category));
             }
         }
         return result;
@@ -216,11 +228,11 @@ public class SyncEngine
 
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
         // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 ('일러 분리' 체크된 분류에만 적용)
-        var categoryRoot = _settings.RootFor(m.Category);
+        var categoryRoot = _settings.RootFor(m.Provider, m.Category);
         var root = categoryRoot;
         int threshold = _settings.CreatorIllustThresholds.TryGetValue(post.CreatorId, out var t)
             ? t
-            : (_settings.FindCategory(m.Category)?.SplitIllust == true ? _settings.IllustMaxImages : 0);
+            : (_settings.FindCategory(m.Provider, m.Category)?.SplitIllust == true ? _settings.IllustMaxImages : 0);
         if (threshold > 0 && !string.IsNullOrWhiteSpace(_settings.IllustRoot))
         {
             bool hasHeavy = items.Any(i => i.Kind is FileKind.Archive or FileKind.Video);

@@ -30,16 +30,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _uiReady;
     private bool _uninstalling;
 
-    /// <summary>작가 그리드의 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화)</summary>
-    public ObservableCollection<string> Categories { get; } = new();
+    /// <summary>사이트별 분류 콤보박스 항목 (분류 그리드 내용과 실시간 동기화). 작가 행은 자기 사이트의 컬렉션을 참조한다.</summary>
+    private readonly Dictionary<string, ObservableCollection<string>> _categoriesBySite = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>설정 탭 분류 그리드의 사이트 콤보박스 항목 — 지원 사이트가 늘면 자동으로 늘어난다</summary>
+    public List<SiteOption> SiteOptions { get; } =
+        ProviderRegistry.SupportedProviders.Select(p => new SiteOption(p, CreatorIds.ProviderLabel(p))).ToList();
+    /// <summary>작가 탭에서 현재 보고 있는 사이트 (fanbox / patreon …). 작가·분류·매칭은 사이트별로 완전히 분리된다.</summary>
+    private string _site = AppSettings.FanboxProvider;
 
     public MainWindow()
     {
         InitializeComponent();
         _settings = AppSettings.Load(App.SettingsPath);
         _state = DownloadState.Load(App.StatePath);
+        if (ProviderRegistry.SupportedProviders.Contains(_settings.SelectedSite, StringComparer.OrdinalIgnoreCase))
+            _site = _settings.SelectedSite.ToLowerInvariant();
         GridArtists.ItemsSource = _artists;
         GridCategories.ItemsSource = _categoryRows;
+        BuildSiteSwitcher();
 
         // 기본 정렬: 매핑된 작가 우선, 그 다음 폴더명순 (매핑이 바뀌면 실시간 재정렬)
         var artistView = (ListCollectionView)CollectionViewSource.GetDefaultView(_artists);

@@ -75,6 +75,7 @@
                         </DockPanel>
                     </Border>
 
+                    <!-- 사이트 전환: 작가·폴더·분류는 사이트별로 완전히 분리 (버튼은 ProviderRegistry.SupportedProviders로 코드에서 생성) -->
                     <DockPanel DockPanel.Dock="Top" Margin="4,6,4,8">
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                             <ui:TextBox x:Name="TxtSearch" Width="230" Margin="0,0,12,0" FontSize="12"
@@ -83,6 +84,11 @@
                             <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#9A9A9A">분류</TextBlock>
                             <ComboBox x:Name="CmbFilter" Width="130" SelectionChanged="CmbFilter_SelectionChanged"/>
                         </StackPanel>
+                        <Border x:Name="SiteSwitcher" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0"
+                                Background="#14FFFFFF" CornerRadius="8" Padding="3"
+                                ToolTip="사이트별로 작가·폴더·분류가 따로 관리됩니다">
+                            <StackPanel x:Name="SitePanel" Orientation="Horizontal"/>
+                        </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock x:Name="TxtSummary" FontSize="12.5" Foreground="#C8C8C8"/>
                             <TextBlock Foreground="#8A8A8A" TextWrapping="Wrap" FontSize="11.5" Margin="0,2,16,0"
@@ -149,24 +155,11 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedItem="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
-                                                  ItemsSource="{Binding Categories, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  ItemsSource="{Binding CategoryOptions}"
                                                   Padding="8,2" FontSize="12" ToolTip="분류를 바꾸면 그 분류의 저장 루트로 폴더 이동을 물어봅니다"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="사이트" Binding="{Binding Site}" IsReadOnly="True" Width="68">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="#9A9A9A"/>
-                                        <Setter Property="FontSize" Value="11.5"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Site}" Value="Patreon">
-                                                <Setter Property="Foreground" Value="#FF8A6A"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
                             <DataGridTextColumn Header="작가명" Binding="{Binding CreatorName}" IsReadOnly="True" Width="130"/>
                             <DataGridTextColumn Binding="{Binding CreatorId}" Width="150">
                                 <DataGridTextColumn.Header>
@@ -278,7 +271,7 @@
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SectionTitle}">저장 분류</TextBlock>
                                 <TextBlock Style="{StaticResource HintText}"
-                                           Text="분류별 저장 루트 폴더를 자유롭게 추가/삭제하세요. 각 루트 바로 아래 하위 폴더가 작가 폴더로 매칭됩니다. 첫 번째 분류가 기본값입니다."/>
+                                           Text="분류별 저장 루트 폴더를 자유롭게 추가/삭제하세요. 각 루트 바로 아래 하위 폴더가 작가 폴더로 매칭됩니다. 분류는 사이트별로 따로 관리되며(FANBOX 분류의 폴더는 FANBOX 작가와만 매칭), 사이트마다 첫 번째 분류가 기본값입니다."/>
                                 <DataGrid x:Name="GridCategories" AutoGenerateColumns="False" CanUserAddRows="False"
                                           CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
                                           BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -290,7 +283,17 @@
                                                           ToolTip="전체 선택/해제 — 체크한 분류를 '선택 삭제'로 지울 수 있습니다"/>
                                             </DataGridCheckBoxColumn.Header>
                                         </DataGridCheckBoxColumn>
-                                        <DataGridTextColumn Header="분류 이름" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+                                        <DataGridTemplateColumn Header="사이트" Width="118">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox ItemsSource="{Binding SiteOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              SelectedValuePath="Key" DisplayMemberPath="Label"
+                                                              SelectedValue="{Binding Provider, UpdateSourceTrigger=PropertyChanged}"
+                                                              Padding="8,2" FontSize="12" ToolTip="이 분류의 폴더를 어느 사이트 작가와 매칭할지"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="분류 이름" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
                                         <DataGridTextColumn Header="저장 루트 경로" Binding="{Binding Path}" Width="*"/>
                                         <DataGridTemplateColumn Width="40">
                                             <DataGridTemplateColumn.CellTemplate>

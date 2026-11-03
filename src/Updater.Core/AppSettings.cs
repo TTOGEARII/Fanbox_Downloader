@@ -109,33 +109,41 @@ public class AppSettings
     public List<AccountSettings> ActiveAccounts
         => new[] { FanboxProvider, PatreonProvider }.Select(ActiveAccount).OfType<AccountSettings>().ToList();
 
-    /// <summary>이름으로 분류 찾기 (대소문자 무시)</summary>
-    public CategoryRoot? FindCategory(string name)
-        => CategoryRoots.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>작가 탭에서 마지막으로 보던 사이트 (fanbox / patreon …)</summary>
+    public string SelectedSite { get; set; } = FanboxProvider;
 
-    /// <summary>기본 분류 이름 (첫 항목)</summary>
-    [System.Text.Json.Serialization.JsonIgnore]
-    public string DefaultCategory => CategoryRoots.FirstOrDefault()?.Name ?? "";
+    /// <summary>해당 사이트의 분류 목록 (순서 유지)</summary>
+    public IEnumerable<CategoryRoot> CategoryRootsFor(string provider)
+        => CategoryRoots.Where(c => c.IsFor(provider));
 
-    /// <summary>분류에 해당하는 저장 루트 경로. 없으면 경로가 지정된 첫 분류의 루트, 그것도 없으면 빈 문자열.</summary>
-    public string RootFor(string category)
+    /// <summary>사이트 안에서 이름으로 분류 찾기 (대소문자 무시). 분류 이름은 사이트가 다르면 겹쳐도 된다.</summary>
+    public CategoryRoot? FindCategory(string provider, string name)
+        => CategoryRootsFor(provider).FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>사이트의 기본 분류 이름 (그 사이트의 첫 항목)</summary>
+    public string DefaultCategory(string provider) => CategoryRootsFor(provider).FirstOrDefault()?.Name ?? "";
+
+    /// <summary>사이트의 분류에 해당하는 저장 루트 경로. 없으면 그 사이트에서 경로가 지정된 첫 분류의 루트, 그것도 없으면 빈 문자열.</summary>
+    public string RootFor(string provider, string category)
     {
-        var cat = FindCategory(category);
+        var cat = FindCategory(provider, category);
         if (cat != null && !string.IsNullOrWhiteSpace(cat.Path)) return cat.Path;
-        return CategoryRoots.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Path))?.Path ?? "";
+        return CategoryRootsFor(provider).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.Path))?.Path ?? "";
     }
 
-    /// <summary>경로가 지정된 분류 루트 (같은 경로를 쓰는 분류는 한 번만). 존재하지 않는 경로는 missing에 담긴다.</summary>
-    public List<(string Root, string Category)> ExistingRoots(List<string>? missing = null)
+    /// <summary>경로가 지정된 분류 루트 (같은 사이트에서 같은 경로를 쓰는 분류는 한 번만). 존재하지 않는 경로는 missing에 담긴다.</summary>
+    /// <param name="provider">null이면 모든 사이트</param>
+    public List<(string Root, string Category, string Provider)> ExistingRoots(string? provider = null, List<string>? missing = null)
     {
-        var roots = new List<(string, string)>();
+        var roots = new List<(string, string, string)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var cat in CategoryRoots)
         {
+            if (provider != null && !cat.IsFor(provider)) continue;
             if (string.IsNullOrWhiteSpace(cat.Path)) continue;
             if (!Directory.Exists(cat.Path)) { missing?.Add($"{cat.Name}: {cat.Path}"); continue; }
-            if (!seen.Add(Path.GetFullPath(cat.Path))) continue;
-            roots.Add((cat.Path, cat.Name));
+            if (!seen.Add(cat.Provider.ToLowerInvariant() + "|" + Path.GetFullPath(cat.Path))) continue;
+            roots.Add((cat.Path, cat.Name, cat.Provider.ToLowerInvariant()));
         }
         return roots;
     }
@@ -165,11 +173,16 @@ public class AppSettings
         => JsonDefaults.WriteAtomic(path, JsonSerializer.Serialize(this, JsonDefaults.Options));
 }
 
-/// <summary>분류 하나 — 이름과 저장 루트 경로</summary>
+/// <summary>분류 하나 — 사이트, 이름, 저장 루트 경로. 분류는 사이트별로 완전히 분리되어 있다
+/// (FANBOX 분류의 폴더는 FANBOX 작가와만, Patreon 분류의 폴더는 Patreon 작가와만 매칭).</summary>
 public class CategoryRoot
 {
+    /// <summary>이 분류가 속한 사이트 (fanbox / patreon …). 구버전 설정에는 없으므로 기본값 fanbox.</summary>
+    public string Provider { get; set; } = AppSettings.FanboxProvider;
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
+
+    public bool IsFor(string provider) => string.Equals(Provider, provider, StringComparison.OrdinalIgnoreCase);
     /// <summary>이 분류 작가의 낱장 일러스트 게시물을 IllustRoot로 분리 저장</summary>
     public bool SplitIllust { get; set; }
 }

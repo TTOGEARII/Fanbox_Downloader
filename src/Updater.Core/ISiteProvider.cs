@@ -79,6 +79,10 @@ public static class CreatorIds
         => string.Equals(provider, AppSettings.FanboxProvider, StringComparison.OrdinalIgnoreCase)
             ? localId : $"{provider.ToLowerInvariant()}:{localId}";
 
+    /// <summary>수동 매핑(Mapping)·자동 매칭 캐시(AutoMatches)의 키 — 폴더 이름도 사이트별로 분리한다
+    /// (FANBOX는 기존 설정 호환을 위해 폴더 이름 그대로, 그 외는 "patreon:폴더").</summary>
+    public static string FolderKey(string provider, string folderName) => Qualify(provider, folderName);
+
     /// <summary>작가 탭 표시용 사이트 이름</summary>
     public static string SiteLabel(string creatorId) => ProviderLabel(ProviderOf(creatorId));
 

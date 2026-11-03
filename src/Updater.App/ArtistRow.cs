@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Updater.Core;
 
 namespace Updater.App;
 
@@ -19,16 +21,22 @@ public abstract class ObservableRow : INotifyPropertyChanged
     protected void Raise(string? name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>사이트 선택 콤보박스 항목 (키 = 프로바이더 이름, 표시 = 사이트 이름)</summary>
+public record SiteOption(string Key, string Label);
+
 /// <summary>설정 탭 저장 분류 그리드 한 줄 (편집용 — 저장 시 CategoryRoot로 변환)</summary>
 public class CategoryRow : ObservableRow
 {
     private bool _selected;
+    private string _provider = AppSettings.FanboxProvider;
     private string _name = "";
     private string _path = "";
     private bool _splitIllust;
 
     /// <summary>삭제 등 일괄 작업용 선택 체크 (저장되지 않음)</summary>
     public bool Selected { get => _selected; set => Set(ref _selected, value); }
+    /// <summary>이 분류가 속한 사이트 (fanbox / patreon …)</summary>
+    public string Provider { get => _provider; set => Set(ref _provider, value); }
     public string Name { get => _name; set => Set(ref _name, value); }
     public string Path { get => _path; set => Set(ref _path, value); }
     public bool SplitIllust { get => _splitIllust; set => Set(ref _splitIllust, value); }
@@ -58,8 +66,16 @@ public class ArtistRow : ObservableRow
     private string _lastResult = "";
     private string _category = "";
     private string _illustThreshold = "";
+    private ObservableCollection<string>? _categoryOptions;
+
+    /// <summary>폴더가 놓인 분류 루트의 사이트 (fanbox / patreon …). 작가 탭은 사이트별로 따로 보여준다.</summary>
+    public string Provider { get; init; } = AppSettings.FanboxProvider;
+    /// <summary>표시용 사이트 이름</summary>
+    public string Site => CreatorIds.ProviderLabel(Provider);
 
     public string Category { get => _category; set => Set(ref _category, value); }
+    /// <summary>이 행의 분류 콤보박스 항목 — 같은 사이트의 분류만 (MainWindow가 사이트별 공유 컬렉션을 넣어준다)</summary>
+    public ObservableCollection<string>? CategoryOptions { get => _categoryOptions; set => Set(ref _categoryOptions, value); }
     /// <summary>작가별 일러스트 기준 장수. 빈칸=전역 기본, 0=분리 안 함</summary>
     public string IllustThreshold { get => _illustThreshold; set => Set(ref _illustThreshold, value); }
 
@@ -68,11 +84,8 @@ public class ArtistRow : ObservableRow
     public string CreatorId
     {
         get => _creatorId;
-        set { if (Set(ref _creatorId, value)) { Raise(nameof(IsMapped)); Raise(nameof(Site)); } }
+        set { if (Set(ref _creatorId, value)) Raise(nameof(IsMapped)); }
     }
-
-    /// <summary>creatorId 접두어로 정해지는 사이트 이름 (FANBOX / Patreon). 미매핑이면 빈칸</summary>
-    public string Site => IsMapped ? Updater.Core.CreatorIds.SiteLabel(_creatorId) : "";
     public string CreatorName { get => _creatorName; set => Set(ref _creatorName, value); }
     public MatchStatus Status
     {
@@ -84,6 +97,9 @@ public class ArtistRow : ObservableRow
 
     /// <summary>creatorId가 연결되어 있는지 — 작가 그리드의 매핑 표시용</summary>
     public bool IsMapped => !string.IsNullOrEmpty(_creatorId);
+
+    /// <summary>수동 매핑·자동 매칭 캐시의 키 (사이트별)</summary>
+    public string FolderKey => CreatorIds.FolderKey(Provider, _folderName);
 
     public string StatusText => _status switch
     {
