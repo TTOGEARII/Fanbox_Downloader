@@ -109,5 +109,5 @@ src\Updater.App               WPF GUI (MainWindow는 Settings/Artists/Sync/Updat
 `src\Updater.App\Updater.App.csproj`의 `<Version>`을 올리고 커밋한 뒤 버전 태그를 푸시하면 GitHub Actions가 설치 파일을 빌드해 Release로 올립니다:
 
 ```
-git tag v1.0.41 && git push origin v1.0.41
+git tag v1.1.0 && git push origin v1.1.0
 ```
