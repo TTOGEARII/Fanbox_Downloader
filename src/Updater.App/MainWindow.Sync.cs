@@ -93,7 +93,8 @@ public partial class MainWindow
 
     // ---------- 동기화 ----------
 
-    private void BtnSync_Click(object sender, RoutedEventArgs e) => StartSync();
+    /// <summary>버튼·F5: 작가 탭에서 보고 있는 사이트만 받는다 (다른 사이트는 건드리지 않음)</summary>
+    private void BtnSync_Click(object sender, RoutedEventArgs e) => StartSync(site: _site);
 
     private void BtnStop_Click(object sender, RoutedEventArgs e)
     {
@@ -114,17 +115,22 @@ public partial class MainWindow
         if (dlg.ShowDialog() != true) return;
         StartSync(
             new Dictionary<string, DateTime> { [row.CreatorId] = dlg.Since },
-            new HashSet<string> { row.CreatorId });
+            new HashSet<string> { row.CreatorId },
+            row.Provider);
     }
 
+    /// <param name="site">지정하면 그 사이트만 동기화 (버튼·F5·다시 받기). null이면 로그인된 모든 사이트 (트레이 메뉴·자동 스케줄)</param>
     private async void StartSync(Dictionary<string, DateTime>? reDownloadSince = null,
-        HashSet<string>? onlyCreators = null)
+        HashSet<string>? onlyCreators = null, string? site = null)
     {
         if (IsBusy) return;
-        if (_settings.ActiveSites.Count == 0)
+        if (site != null ? _settings.ActiveSite(site) == null : _settings.ActiveSites.Count == 0)
         {
-            ShowInfo("설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
+            ShowInfo(site != null
+                ? $"설정 탭에서 {CreatorIds.ProviderLabel(site)} 쿠키를 먼저 입력하세요."
+                : "설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
             Tabs.SelectedIndex = 1;
+            if (site != null) SelectSite(site);
             return;
         }
 
@@ -132,7 +138,7 @@ public partial class MainWindow
         _syncCts = new CancellationTokenSource();
         SetSyncButtons(running: true);
         Progress.Value = 0;
-        TxtStatus.Text = "동기화 시작...";
+        TxtStatus.Text = site != null ? $"{CreatorIds.ProviderLabel(site)} 동기화 시작..." : "동기화 시작 (모든 사이트)...";
 
         var engine = new SyncEngine(_settings, _state, SaveState);
         engine.Log += msg => Dispatcher.BeginInvoke(() => AppendLog(msg));
@@ -154,9 +160,9 @@ public partial class MainWindow
         try
         {
             // 프로바이더는 동기화가 끝나도 유지한다 (유휴 5분 뒤 자동 해제) — 연속 작업 때 WebView2 재기동을 피함
-            var providers = await AcquireProvidersAsync(_syncCts.Token);
+            var providers = await AcquireProvidersAsync(_syncCts.Token, site);
             if (providers == null) return;
-            var summary = await engine.RunAsync(providers, _syncCts.Token, reDownloadSince, onlyCreators);
+            var summary = await engine.RunAsync(providers, _syncCts.Token, reDownloadSince, onlyCreators, site);
             _providerLastUsed = DateTime.Now;
 
             Progress.Value = 100;

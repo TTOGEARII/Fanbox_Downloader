@@ -124,7 +124,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         switch (e.Key)
         {
             case Key.F5 when BtnSync.IsEnabled:
-                StartSync(); e.Handled = true; break;
+                StartSync(site: _site); e.Handled = true; break;
             case Key.Escape when _syncRunning:
                 BtnStop_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.R when Keyboard.Modifiers == ModifierKeys.Control && BtnRefresh.IsEnabled:

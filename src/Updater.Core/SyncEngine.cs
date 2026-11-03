@@ -103,11 +103,15 @@ public class SyncEngine
     /// <param name="providers">로그인된 프로바이더들. 작가는 creatorId 접두어(<see cref="CreatorIds"/>)로 어느 사이트인지 정해진다.</param>
     /// <param name="reDownloadSince">creatorId → 날짜: 이 날짜 이후 게시물은 받은 기록이 있어도 다시 받음</param>
     /// <param name="onlyCreators">지정하면 해당 creatorId만 동기화</param>
+    /// <param name="onlyProvider">지정하면 그 사이트의 폴더·작가만 동기화 (작가 탭에서 보고 있는 사이트만 받기)</param>
     public async Task<SyncSummary> RunAsync(IReadOnlyList<ISiteProvider> providers, CancellationToken ct,
         IReadOnlyDictionary<string, DateTime>? reDownloadSince = null,
-        HashSet<string>? onlyCreators = null)
+        HashSet<string>? onlyCreators = null,
+        string? onlyProvider = null)
     {
         var summary = new SyncSummary();
+        if (onlyProvider != null)
+            providers = providers.Where(p => string.Equals(p.Name, onlyProvider, StringComparison.OrdinalIgnoreCase)).ToList();
         var byProvider = providers.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
         var creators = new List<CreatorInfo>();
         foreach (var provider in providers)
@@ -118,7 +122,7 @@ public class SyncEngine
             creators.AddRange(list);
         }
 
-        var matches = MatchFolders(creators);
+        var matches = MatchFolders(creators, onlyProvider);
         Matched?.Invoke(matches);
         summary.UnmatchedFolders = matches.Where(m => m.CreatorId == null).Select(m => m.FolderName).ToList();
         if (summary.UnmatchedFolders.Count > 0)

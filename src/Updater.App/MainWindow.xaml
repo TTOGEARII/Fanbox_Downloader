@@ -36,7 +36,7 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <ui:Button x:Name="BtnSync" Click="BtnSync_Click" Appearance="Primary"
                                Content="▶  지금 최신화" FontWeight="SemiBold" Padding="18,8"
-                               ToolTip="동기화가 켜진 작가의 새 게시물을 받습니다 (F5)"/>
+                               ToolTip="작가 탭에서 보고 있는 사이트의, 동기화가 켜진 작가의 새 게시물을 받습니다 (F5). 다른 사이트는 받지 않습니다"/>
                     <ui:Button x:Name="BtnStop" Click="BtnStop_Click" IsEnabled="False"
                                Content="■  중지" Margin="8,0,0,0" Padding="14,8" ToolTip="진행 중인 동기화를 멈춥니다 (Esc)"/>
                     <ui:Button x:Name="BtnRefresh" Click="BtnRefresh_Click"
