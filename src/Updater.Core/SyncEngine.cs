@@ -75,14 +75,14 @@ public class SyncEngine
             }
         }
 
-        // 옵션: 폴더가 없는 팔로우 작가도 자동으로 폴더를 만들어 대상에 포함 (그 사이트에 분류 루트가 있을 때만)
-        if (_settings.AutoCreateFolders)
+        // 옵션(사이트별): 폴더가 없는 팔로우 작가도 자동으로 폴더를 만들어 대상에 포함 (그 사이트에 분류 루트가 있을 때만)
         {
             var mappedIds = new HashSet<string>(
                 result.Where(m => m.CreatorId != null).Select(m => m.CreatorId!),
                 StringComparer.OrdinalIgnoreCase);
             foreach (var c in creators.Where(c => !mappedIds.Contains(c.CreatorId)))
             {
+                if (!_settings.Site(c.Provider).AutoCreateFolders) continue;
                 if (onlyProvider != null && !string.Equals(c.Provider, onlyProvider, StringComparison.OrdinalIgnoreCase)) continue;
                 if (string.IsNullOrEmpty(_settings.RootFor(c.Provider, ""))) continue;
                 var category = _settings.CreatorCategories.GetValueOrDefault(c.CreatorId, _settings.DefaultCategory(c.Provider));
@@ -224,28 +224,29 @@ public class SyncEngine
             .Replace("{creator}", post.CreatorId)).TrimEnd('.', ' ');
         if (string.IsNullOrWhiteSpace(dirName)) dirName = $"post_{post.PostId}";
 
-        var items = content.Items.Where(i => _settings.FileTypes.Allows(i.Kind)).ToList();
+        var site = _settings.Site(m.Provider);
+        var items = content.Items.Where(i => site.FileTypes.Allows(i.Kind)).ToList();
 
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
-        // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 전역 설정 ('일러 분리' 체크된 분류에만 적용)
-        var categoryRoot = _settings.RootFor(m.Provider, m.Category);
+        // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 사이트 설정 ('일러 분리' 체크된 분류에만 적용)
+        var categoryRoot = site.RootFor(m.Category);
         var root = categoryRoot;
         int threshold = _settings.CreatorIllustThresholds.TryGetValue(post.CreatorId, out var t)
             ? t
-            : (_settings.FindCategory(m.Provider, m.Category)?.SplitIllust == true ? _settings.IllustMaxImages : 0);
-        if (threshold > 0 && !string.IsNullOrWhiteSpace(_settings.IllustRoot))
+            : (site.FindCategory(m.Category)?.SplitIllust == true ? site.IllustMaxImages : 0);
+        if (threshold > 0 && !string.IsNullOrWhiteSpace(site.IllustRoot))
         {
             bool hasHeavy = items.Any(i => i.Kind is FileKind.Archive or FileKind.Video);
             int imageCount = items.Count(i => i.Kind == FileKind.Image);
             if (!hasHeavy && imageCount <= threshold)
-                root = _settings.IllustRoot;
+                root = site.IllustRoot;
         }
         var isIllust = root != categoryRoot;
         var postDir = Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 
         Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" + (isIllust ? " (일러스트)" : ""));
-        if (_settings.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
+        if (site.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
             items.Add(new DownloadItem(content.CoverImageUrl!, "cover.jpg", FileKind.Image));
 
         // 파일 병렬 다운로드 (API 호출과 달리 파일 서버는 병렬 허용)
@@ -263,8 +264,8 @@ public class SyncEngine
         }).ToList();
         await Task.WhenAll(tasks);
 
-        if (_settings.AutoExtractArchives)
-            ExtractArchives(items, postDir);
+        if (site.AutoExtractArchives)
+            ExtractArchives(items, postDir, site.DeleteArchiveAfterExtract);
 
         // 외부 링크 처리: 링크 카드 해석 → 지원 호스트는 자동 다운로드
         var externalNotes = new List<string>();
@@ -273,7 +274,7 @@ public class SyncEngine
             ct.ThrowIfCancellationRequested();
             var resolved = await ExternalDownloader.ResolveAsync(link, ct);
             bool downloaded = false;
-            if (_settings.DownloadExternalLinks)
+            if (site.DownloadExternalLinks)
                 downloaded = await ExternalDownloader.TryDownloadAsync(resolved, postDir,
                     msg => Log?.Invoke(msg), ct);
             externalNotes.Add(resolved + (downloaded ? "  [다운로드됨]" : "  [수동 다운로드 필요]"));
@@ -281,7 +282,7 @@ public class SyncEngine
                 Log?.Invoke($"  [외부 링크] 자동 다운로드 미지원 — post.txt에 저장: {resolved}");
         }
 
-        if (_settings.SaveText &&
+        if (site.SaveText &&
             (!string.IsNullOrWhiteSpace(content.Text) || externalNotes.Count > 0))
         {
             var sb = new StringBuilder();
@@ -317,7 +318,7 @@ public class SyncEngine
     }
 
     /// <summary>받은 zip을 게시물 폴더 안에 압축파일명과 같은 하위 폴더로 푼다. RAR·7z는 미지원.</summary>
-    private void ExtractArchives(List<DownloadItem> items, string postDir)
+    private void ExtractArchives(List<DownloadItem> items, string postDir, bool deleteAfterExtract)
     {
         foreach (var item in items.Where(i => i.Kind == FileKind.Archive))
         {
@@ -334,7 +335,7 @@ public class SyncEngine
             {
                 Log?.Invoke($"  [압축 해제] {item.FileName}");
                 System.IO.Compression.ZipFile.ExtractToDirectory(archPath, extractDir, ZipNameEncoding, overwriteFiles: true);
-                if (_settings.DeleteArchiveAfterExtract) File.Delete(archPath);
+                if (deleteAfterExtract) File.Delete(archPath);
             }
             catch (Exception ex)
             {

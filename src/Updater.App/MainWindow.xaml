@@ -218,60 +218,53 @@
                 </DockPanel>
             </TabItem>
 
-            <!-- 설정 탭 -->
+            <!-- 설정 탭: 위 = 사이트별 설정 (현재 사이트), 아래 = 공통 설정 -->
             <TabItem Header="설정">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20,10,20,8" MaxWidth="760" HorizontalAlignment="Left">
                         <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,10"
                                    Text="모든 설정은 바꾸는 즉시 자동 저장·반영됩니다. 글자 입력칸은 다른 곳을 클릭하면 반영돼요."/>
 
-                        <!-- 계정 -->
+                        <!-- 사이트 전환 (작가 탭과 같은 선택을 공유 — 버튼은 코드에서 생성) -->
+                        <DockPanel Margin="0,0,0,10">
+                            <Border DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0"
+                                    Background="#14FFFFFF" CornerRadius="8" Padding="3">
+                                <StackPanel x:Name="SettingsSitePanel" Orientation="Horizontal"/>
+                            </Border>
+                            <TextBlock VerticalAlignment="Center" Foreground="#9A9A9A" FontSize="12" TextWrapping="Wrap"
+                                       Text="사이트별 설정 — 아래 세 카드(계정 · 저장 분류 · 게시물/다운로드)는 선택한 사이트에만 적용됩니다. 그 아래는 공통 설정입니다."/>
+                        </DockPanel>
+
+                        <!-- 계정 (사이트별) -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource SectionTitle}">계정</TextBlock>
+                                <TextBlock x:Name="TxtAccountTitle" Style="{StaticResource SectionTitle}">계정</TextBlock>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="185"/>
+                                        <ColumnDefinition Width="150"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource FieldLabel}">FANBOXSESSID 쿠키</TextBlock>
+                                    <TextBlock x:Name="LblCookie" Style="{StaticResource FieldLabel}">쿠키</TextBlock>
                                     <ui:PasswordBox x:Name="PwdSession" Grid.Column="1" RevealButtonEnabled="True"
-                                                    PlaceholderText="브라우저에서 복사한 쿠키 값"/>
+                                                    PlaceholderText="브라우저에서 복사한 쿠키 값 (비워 두면 이 사이트는 사용 안 함)"/>
                                     <ui:Button x:Name="BtnTestSession" Grid.Column="2" Content="연결 확인" Margin="8,0,0,0" Padding="12,5"
                                                Click="BtnTestSession_Click" ToolTip="쿠키로 로그인되는지 확인하고 팔로우/후원 작가 수를 보여줍니다"/>
                                 </Grid>
                                 <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0">
-                                    <Run Text="브라우저에서 fanbox.cc 로그인 → F12 → Application → Cookies → fanbox.cc → FANBOXSESSID 값 복사. 만료되면('인증 실패') 다시 넣어주세요."/>
+                                    <Run x:Name="RunCookieHint"/>
                                     <LineBreak/>
-                                    <Hyperlink Click="LinkFanbox_Click" Foreground="#60CDFF">fanbox.cc 열기</Hyperlink>
-                                </TextBlock>
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="185"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource FieldLabel}">Patreon session_id</TextBlock>
-                                    <ui:PasswordBox x:Name="PwdPatreonSession" Grid.Column="1" RevealButtonEnabled="True"
-                                                    PlaceholderText="브라우저에서 복사한 session_id 값 (비워 두면 Patreon 사용 안 함)"/>
-                                    <ui:Button x:Name="BtnTestPatreon" Grid.Column="2" Content="연결 확인" Margin="8,0,0,0" Padding="12,5"
-                                               Click="BtnTestPatreon_Click" ToolTip="쿠키로 Patreon에 로그인되는지 확인하고 후원 중인 크리에이터 수를 보여줍니다"/>
-                                </Grid>
-                                <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0">
-                                    <Run Text="브라우저에서 patreon.com 로그인 → F12 → Application → Cookies → patreon.com → session_id 값 복사. 후원(멤버십) 중인 크리에이터의 게시물을 받습니다. 작가 탭의 creatorId는 patreon:이름 형식입니다."/>
-                                    <LineBreak/>
-                                    <Hyperlink Click="LinkPatreon_Click" Foreground="#60CDFF">patreon.com 열기</Hyperlink>
+                                    <Hyperlink Click="LinkSite_Click" Foreground="#60CDFF"><Run x:Name="RunSiteLink">사이트 열기</Run></Hyperlink>
                                 </TextBlock>
                             </StackPanel>
                         </Border>
 
-                        <!-- 저장 분류 -->
+                        <!-- 저장 분류 (사이트별) -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource SectionTitle}">저장 분류</TextBlock>
+                                <TextBlock x:Name="TxtCategoryTitle" Style="{StaticResource SectionTitle}">저장 분류</TextBlock>
                                 <TextBlock Style="{StaticResource HintText}"
-                                           Text="분류별 저장 루트 폴더를 자유롭게 추가/삭제하세요. 각 루트 바로 아래 하위 폴더가 작가 폴더로 매칭됩니다. 분류는 사이트별로 따로 관리되며(FANBOX 분류의 폴더는 FANBOX 작가와만 매칭), 사이트마다 첫 번째 분류가 기본값입니다."/>
+                                           Text="이 사이트 전용 분류입니다. 분류별 저장 루트 폴더를 자유롭게 추가/삭제하세요. 각 루트 바로 아래 하위 폴더가 이 사이트의 작가 폴더로 매칭되며, 첫 번째 분류가 기본값입니다."/>
                                 <DataGrid x:Name="GridCategories" AutoGenerateColumns="False" CanUserAddRows="False"
                                           CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
                                           BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -283,17 +276,7 @@
                                                           ToolTip="전체 선택/해제 — 체크한 분류를 '선택 삭제'로 지울 수 있습니다"/>
                                             </DataGridCheckBoxColumn.Header>
                                         </DataGridCheckBoxColumn>
-                                        <DataGridTemplateColumn Header="사이트" Width="118">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <ComboBox ItemsSource="{Binding SiteOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedValuePath="Key" DisplayMemberPath="Label"
-                                                              SelectedValue="{Binding Provider, UpdateSourceTrigger=PropertyChanged}"
-                                                              Padding="8,2" FontSize="12" ToolTip="이 분류의 폴더를 어느 사이트 작가와 매칭할지"/>
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="분류 이름" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
+                                        <DataGridTextColumn Header="분류 이름" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
                                         <DataGridTextColumn Header="저장 루트 경로" Binding="{Binding Path}" Width="*"/>
                                         <DataGridTemplateColumn Width="40">
                                             <DataGridTemplateColumn.CellTemplate>
@@ -330,45 +313,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 다운로드 -->
+                        <!-- 게시물 · 다운로드 (사이트별) -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource SectionTitle}">다운로드</TextBlock>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
-                                    <ui:TextBox x:Name="TxtTemplate" Grid.Column="1" Margin="0,3"
-                                                ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
-                                    <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
-                                    <ui:TextBox x:Name="TxtDateFormat" Grid.Row="1" Grid.Column="1" Margin="0,3" Width="160" HorizontalAlignment="Left"
-                                                ToolTip="예: yyyy-MM-dd, yyyyMMdd, yy.MM.dd"/>
-                                    <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
-                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
-                                        <ui:TextBox x:Name="TxtParallel" Margin="0,3" Width="70" TextAlignment="Center"/>
-                                        <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0" Text="1~8. 한 게시물 안의 파일을 동시에 받는 수"/>
-                                    </StackPanel>
-                                </Grid>
-                                <WrapPanel Margin="0,10,0,0">
+                                <TextBlock x:Name="TxtDownloadTitle" Style="{StaticResource SectionTitle}">게시물 · 다운로드</TextBlock>
+                                <WrapPanel>
+                                    <CheckBox x:Name="ChkPaid" Margin="0,2,18,2" FontWeight="SemiBold">유료(후원·플랜 구독) 게시물 받기</CheckBox>
+                                    <CheckBox x:Name="ChkFree" Margin="0,2,18,2" FontWeight="SemiBold">무료(공개) 게시물 받기</CheckBox>
+                                </WrapPanel>
+                                <TextBlock x:Name="TxtPostFilterHint" Style="{StaticResource HintText}"/>
+                                <WrapPanel Margin="0,6,0,0">
                                     <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                                     <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
                                     <CheckBox x:Name="ChkAutoCreate" Margin="0,2,18,2">폴더 없는 팔로우 작가도 자동 생성</CheckBox>
                                 </WrapPanel>
-                                <CheckBox x:Name="ChkPaidOnly" Margin="0,2" FontWeight="SemiBold">[FANBOX] 플랜 구독 게시물만 받기 (무료 공개 글 제외)</CheckBox>
-                                <TextBlock Style="{StaticResource HintText}"
-                                           Text="체크하면 후원 플랜에 가입해서 볼 수 있는 유료 게시물만 다운로드합니다."/>
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,14,0">[Patreon]</TextBlock>
-                                    <CheckBox x:Name="ChkPatreonPaid" Margin="0,2,18,2">유료(후원자 전용) 게시물 받기</CheckBox>
-                                    <CheckBox x:Name="ChkPatreonFree" Margin="0,2,18,2">무료(공개) 게시물 받기</CheckBox>
-                                </StackPanel>
-                                <TextBlock Style="{StaticResource HintText}"
-                                           Text="후원 중인 크리에이터의 게시물에서 실제로 첨부된 이미지·영상·파일만 받습니다. 미리보기(티저·썸네일) 이미지는 받지 않습니다."/>
                                 <CheckBox x:Name="ChkExternal" Margin="0,2">외부 링크 자동 다운로드 (Dropbox · Google Drive · 직접 링크)</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
                                            Text="본문에 걸린 외부 배포 링크를 자동으로 받습니다. 미지원 호스트(MEGA 등)는 post.txt에 링크로 저장됩니다."/>
@@ -389,11 +347,39 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 공통 설정 -->
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,10,0,8" FontSize="16">공통 설정</TextBlock>
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}">저장 규칙</TextBlock>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                                    <ui:TextBox x:Name="TxtTemplate" Grid.Column="1" Margin="0,3"
+                                                ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
+                                    <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                                    <ui:TextBox x:Name="TxtDateFormat" Grid.Row="1" Grid.Column="1" Margin="0,3" Width="160" HorizontalAlignment="Left"
+                                                ToolTip="예: yyyy-MM-dd, yyyyMMdd, yy.MM.dd"/>
+                                    <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                        <ui:TextBox x:Name="TxtParallel" Margin="0,3" Width="70" TextAlignment="Center"/>
+                                        <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0" Text="1~8. 한 게시물 안의 파일을 동시에 받는 수"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 스케줄·동작 -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SectionTitle}">자동 실행 스케줄</TextBlock>
-                                <CheckBox x:Name="ChkSchedule" Margin="0,0,0,6">자동 최신화 사용 (프로그램이 트레이에 있을 때 동작)</CheckBox>
+                                <CheckBox x:Name="ChkSchedule" Margin="0,0,0,6">자동 최신화 사용 (프로그램이 트레이에 있을 때 동작 — 로그인된 모든 사이트)</CheckBox>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
                                             IsEnabled="{Binding IsChecked, ElementName=ChkSchedule}">
                                     <RadioButton x:Name="RadDaily" GroupName="sched" VerticalAlignment="Center">매일</RadioButton>

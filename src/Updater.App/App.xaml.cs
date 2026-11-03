@@ -25,7 +25,7 @@ public partial class App : System.Windows.Application
         if (e.Args.Length >= 2 && e.Args[0] == "--debug-post")
         {
             // 원시 post.info 응답을 debug_post.json으로 저장 (파싱 문제 진단용)
-            var account = AppSettings.Load(SettingsPath).GetAccount(AppSettings.FanboxProvider);
+            var account = AppSettings.Load(SettingsPath).ActiveSite(AppSettings.FanboxProvider);
             if (account != null)
             {
                 using var browser = new Updater.Providers.Browser.BrowserClient("https://www.fanbox.cc/",
@@ -112,13 +112,14 @@ public partial class App : System.Windows.Application
             var root = doc.RootElement;
             var settings = new AppSettings
             {
-                // "NasRoot"는 구버전 콘솔 config.json의 실제 키 이름 (이름과 달리 아무 디렉토리나 가능)
-                LegacyVideoRoot = root.TryGetProperty("NasRoot", out var nr) ? nr.GetString() ?? "" : "",
                 RequestDelayMs = root.TryGetProperty("RequestDelayMs", out var rd) ? rd.GetInt32() : 1000,
-                DownloadCoverImage = root.TryGetProperty("DownloadCoverImage", out var dc) && dc.GetBoolean(),
             };
-            var session = root.TryGetProperty("FanboxSessionId", out var fs) ? fs.GetString() ?? "" : "";
-            settings.Accounts.Add(new AccountSettings { Provider = AppSettings.FanboxProvider, SessionId = session });
+            var fanbox = settings.Site(AppSettings.FanboxProvider);
+            // "NasRoot"는 구버전 콘솔 config.json의 실제 키 이름 (이름과 달리 아무 디렉토리나 가능)
+            var nasRoot = root.TryGetProperty("NasRoot", out var nr) ? nr.GetString() ?? "" : "";
+            fanbox.Categories.Add(new CategoryRoot { Name = "영상", Path = nasRoot });
+            fanbox.DownloadCoverImage = root.TryGetProperty("DownloadCoverImage", out var dc) && dc.GetBoolean();
+            fanbox.SessionId = root.TryGetProperty("FanboxSessionId", out var fs) ? fs.GetString() ?? "" : "";
 
             var mappingPath = Path.Combine(DataDir, "mapping.json");
             if (File.Exists(mappingPath))
@@ -150,7 +151,7 @@ public partial class App : System.Windows.Application
             var providers = new List<ISiteProvider>();
             try
             {
-                foreach (var account in settings.ActiveAccounts)
+                foreach (var account in settings.ActiveSites)
                 {
                     var provider = ProviderRegistry.Create(account, settings, WebViewDataDir);
                     if (provider == null) continue;

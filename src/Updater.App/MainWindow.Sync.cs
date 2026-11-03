@@ -24,7 +24,7 @@ public partial class MainWindow
     /// <param name="onlyProvider">지정하면 그 사이트만 (연결 확인 버튼용)</param>
     private async Task<List<ISiteProvider>?> AcquireProvidersAsync(CancellationToken ct, string? onlyProvider = null)
     {
-        var accounts = _settings.ActiveAccounts;
+        var accounts = _settings.ActiveSites;
         if (onlyProvider != null)
             accounts = accounts.Where(a => string.Equals(a.Provider, onlyProvider, StringComparison.OrdinalIgnoreCase)).ToList();
         if (accounts.Count == 0)
@@ -33,7 +33,8 @@ public partial class MainWindow
                 ? "설정 탭에서 Patreon session_id 쿠키를 먼저 입력하세요."
                 : "설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
             Tabs.SelectedIndex = 1;
-            (onlyProvider == AppSettings.PatreonProvider ? PwdPatreonSession : PwdSession).Focus();
+            if (onlyProvider != null) SelectSite(onlyProvider);
+            PwdSession.Focus();
             return null;
         }
 
@@ -120,7 +121,7 @@ public partial class MainWindow
         HashSet<string>? onlyCreators = null)
     {
         if (IsBusy) return;
-        if (_settings.ActiveAccounts.Count == 0)
+        if (_settings.ActiveSites.Count == 0)
         {
             ShowInfo("설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
             Tabs.SelectedIndex = 1;
@@ -196,7 +197,6 @@ public partial class MainWindow
         BtnRefresh.IsEnabled = !running;
         BtnRedownload.IsEnabled = !running;
         BtnTestSession.IsEnabled = !running;
-        BtnTestPatreon.IsEnabled = !running;
         BtnStop.IsEnabled = running;
     }
 

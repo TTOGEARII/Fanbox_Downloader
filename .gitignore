@@ -7,6 +7,8 @@ Releases/
 
 # 개인 데이터 — 세션 쿠키 포함, 절대 커밋 금지
 settings.json
+settings.json.bak*
+*.bak-*
 config.json
 state.json
 mapping.json

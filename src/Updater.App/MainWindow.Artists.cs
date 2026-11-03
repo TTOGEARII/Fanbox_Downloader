@@ -27,46 +27,67 @@ public partial class MainWindow
     /// <summary>마지막 FetchCreatorsAsync에서 조회에 성공한 사이트 — 그 사이트의 폴더만 다시 매칭한다</summary>
     private HashSet<string> _lastFetchedSites = new(StringComparer.OrdinalIgnoreCase);
     private bool _fetchingCreators;
-    private readonly Dictionary<string, RadioButton> _siteButtons = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>사이트 전환 버튼들 (작가 탭·설정 탭 두 곳, 사이트당 하나씩)</summary>
+    private readonly List<(string Site, RadioButton Button)> _siteButtons = new();
+    private bool _switchingSite;
 
     // ---------- 사이트 전환 ----------
 
-    /// <summary>작가 탭 상단의 사이트 전환 버튼을 지원 사이트 목록으로 만든다 (새 사이트가 추가되면 자동으로 늘어남)</summary>
+    /// <summary>작가 탭·설정 탭 상단의 사이트 전환 버튼을 지원 사이트 목록으로 만든다 (새 사이트가 추가되면 자동으로 늘어남).
+    /// 두 탭의 버튼은 같은 <see cref="_site"/>를 가리키므로 한쪽을 바꾸면 다른 쪽도 따라간다.</summary>
     private void BuildSiteSwitcher()
     {
-        SitePanel.Children.Clear();
         _siteButtons.Clear();
-        foreach (var site in ProviderRegistry.SupportedProviders)
+        foreach (var (panel, group) in new[] { (SitePanel, "site"), (SettingsSitePanel, "settingsSite") })
         {
-            var btn = new RadioButton
+            panel.Children.Clear();
+            foreach (var site in ProviderRegistry.SupportedProviders)
             {
-                Content = CreatorIds.ProviderLabel(site),
-                GroupName = "site",
-                Tag = site,
-                Style = (Style)FindResource("SiteToggle"),
-                IsChecked = string.Equals(site, _site, StringComparison.OrdinalIgnoreCase),
-            };
-            btn.Checked += (_, _) => SelectSite(site);
-            _siteButtons[site] = btn;
-            SitePanel.Children.Add(btn);
+                var btn = new RadioButton
+                {
+                    Content = CreatorIds.ProviderLabel(site),
+                    GroupName = group,
+                    Tag = site,
+                    Style = (Style)FindResource("SiteToggle"),
+                    IsChecked = string.Equals(site, _site, StringComparison.OrdinalIgnoreCase),
+                };
+                btn.Checked += (_, _) => { if (!_switchingSite) SelectSite(site); };
+                _siteButtons.Add((site, btn));
+                panel.Children.Add(btn);
+            }
         }
     }
 
-    /// <summary>작가 탭이 보여줄 사이트를 바꾼다 — 그리드 필터·분류 필터·요약·안내 배너가 모두 그 사이트 기준으로 바뀐다</summary>
+    /// <summary>현재 사이트를 바꾼다 — 작가 탭의 그리드 필터·분류 필터·요약·안내 배너와 설정 탭의 사이트별 설정이 모두 그 사이트 기준으로 바뀐다</summary>
     private void SelectSite(string site)
     {
-        if (!string.Equals(_site, site, StringComparison.OrdinalIgnoreCase))
+        if (_switchingSite) return;
+        _switchingSite = true;
+        try
         {
+            var changed = !string.Equals(_site, site, StringComparison.OrdinalIgnoreCase);
+            if (changed && _uiReady)
+            {
+                // 설정 탭에 입력 중이던 이전 사이트의 값을 먼저 반영해 두고 바꾼다
+                _applyDebounce.Stop();
+                ApplySettings(interactive: false);
+            }
             _site = site.ToLowerInvariant();
             _settings.SelectedSite = _site;
-            if (_uiReady) _settings.Save(App.SettingsPath);
+            foreach (var (s, btn) in _siteButtons)
+                btn.IsChecked = string.Equals(s, _site, StringComparison.OrdinalIgnoreCase);
+            if (CmbFilter == null) return;
+            if (changed && _uiReady)
+            {
+                LoadSiteSettingsToUi();
+                _settings.Save(App.SettingsPath);
+            }
+            RefreshCategoryUi();
+            ApplyArtistFilter();
+            UpdateSummary();
+            UpdateSetupBanner();
         }
-        if (_siteButtons.TryGetValue(site, out var btn) && btn.IsChecked != true) btn.IsChecked = true;
-        if (!_uiReady && CmbFilter == null) return;
-        RefreshCategoryUi();
-        ApplyArtistFilter();
-        UpdateSummary();
-        UpdateSetupBanner();
+        finally { _switchingSite = false; }
     }
 
     /// <summary>사이트별 분류 콤보박스 컬렉션 (없으면 만든다)</summary>
