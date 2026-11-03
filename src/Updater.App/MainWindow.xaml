@@ -151,12 +151,12 @@
                                 </DataGridCheckBoxColumn.Header>
                             </DataGridCheckBoxColumn>
                             <DataGridTextColumn Header="폴더명" Binding="{Binding FolderName}" IsReadOnly="True" Width="175"/>
-                            <DataGridTemplateColumn Header="분류" Width="86">
+                            <DataGridTemplateColumn Header="분류" Width="124">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedItem="{Binding Category, UpdateSourceTrigger=PropertyChanged}"
-                                                  ItemsSource="{Binding CategoryOptions}"
-                                                  Padding="8,2" FontSize="12" ToolTip="분류를 바꾸면 그 분류의 저장 루트로 폴더 이동을 물어봅니다"/>
+                                                  ItemsSource="{Binding CategoryOptions}" MinWidth="110"
+                                                  Padding="6,2" FontSize="12" ToolTip="분류를 바꾸면 그 분류의 저장 루트로 폴더 이동을 물어봅니다"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -185,7 +185,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Binding="{Binding IllustThreshold}" Width="90">
+                            <DataGridTextColumn Binding="{Binding IllustThreshold}" Width="104">
                                 <DataGridTextColumn.Header>
                                     <TextBlock Text="일러 기준(장)" ToolTip="이 작가만의 일러스트 분리 기준 장수. 빈칸=설정 탭 기본값, 0=분리 안 함"/>
                                 </DataGridTextColumn.Header>
@@ -394,7 +394,7 @@
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                         <RadioButton x:Name="RadDaily" GroupName="sched" VerticalAlignment="Center" Width="60">매일</RadioButton>
                                         <RadioButton x:Name="RadWeekly" GroupName="sched" VerticalAlignment="Center" Width="60">매주</RadioButton>
-                                        <ComboBox x:Name="CmbWeekDay" Width="76" Margin="0,0,0,0" VerticalAlignment="Center" FontSize="12"
+                                        <ComboBox x:Name="CmbWeekDay" Width="100" Margin="0,0,0,0" VerticalAlignment="Center" FontSize="12"
                                                   IsEnabled="{Binding IsChecked, ElementName=RadWeekly}"/>
                                         <TextBlock VerticalAlignment="Center" Margin="6,0,20,0">요일</TextBlock>
                                         <RadioButton x:Name="RadMonthly" GroupName="sched" VerticalAlignment="Center" Width="60">매월</RadioButton>
