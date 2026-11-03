@@ -91,6 +91,7 @@ public partial class MainWindow
             TxtPostFilterHint.Text = info.PostHint;
             ChkFlat.IsChecked = site.FlatFiles;
             TxtFlatTemplate.Text = site.FlatFileNameTemplate;
+            ChkFlatIllustOnly.IsChecked = site.FlatIllustOnly;
             ChkSaveText.IsChecked = site.SaveText;
             ChkCover.IsChecked = site.DownloadCoverImage;
             ChkAutoCreate.IsChecked = site.AutoCreateFolders;
@@ -154,6 +155,7 @@ public partial class MainWindow
         current.DownloadFree = ChkFree.IsChecked == true;
         current.FlatFiles = ChkFlat.IsChecked == true;
         current.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
+        current.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         current.SaveText = ChkSaveText.IsChecked == true;
         current.DownloadCoverImage = ChkCover.IsChecked == true;
         current.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
@@ -207,7 +209,7 @@ public partial class MainWindow
     {
         foreach (var toggle in new ToggleButton[]
                  {
-                     ChkPaid, ChkFree, ChkFlat, ChkSaveText, ChkCover, ChkAutoCreate, ChkExternal, ChkAutoExtract,
+                     ChkPaid, ChkFree, ChkFlat, ChkFlatIllustOnly, ChkSaveText, ChkCover, ChkAutoCreate, ChkExternal, ChkAutoExtract,
                      ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
                      ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
                  })

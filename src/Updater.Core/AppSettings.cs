@@ -224,6 +224,8 @@ public class SiteSettings
     public bool FlatFiles { get; set; } = false;
     /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
     public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
+    /// <summary>true면 평평 저장을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고, 나머지 게시물은 폴더로 저장</summary>
+    public bool FlatIllustOnly { get; set; } = false;
 
     public bool SaveText { get; set; } = true;
     public bool DownloadCoverImage { get; set; } = false;

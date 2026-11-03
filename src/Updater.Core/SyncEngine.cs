@@ -232,22 +232,6 @@ public class SyncEngine
         var site = _settings.Site(m.Provider);
         var items = content.Items.Where(i => site.FileTypes.Allows(i.Kind)).ToList();
 
-        // 평평하게 저장: 게시물 폴더 없이 작가 폴더에 "{title}_{index}.ext" 꼴로 바로 저장 (사이트 옵션)
-        var flat = site.FlatFiles;
-        if (flat)
-        {
-            var template = string.IsNullOrWhiteSpace(site.FlatFileNameTemplate) ? "{title}_{index}" : site.FlatFileNameTemplate;
-            var baseName = Fill(template);
-            var width = Math.Max(2, items.Count.ToString().Length);
-            items = items.Select((item, i) =>
-            {
-                var ext = Path.GetExtension(item.FileName);
-                var name = NameSanitizer.Sanitize(baseName.Replace("{index}", (i + 1).ToString().PadLeft(width, '0'))).TrimEnd('.', ' ');
-                if (string.IsNullOrWhiteSpace(name)) name = $"{post.PostId}_{i + 1:D2}";
-                return item with { FileName = name + ext };
-            }).ToList();
-        }
-
         // 낱장 일러스트 게시물은 일러스트 루트로 분리 저장.
         // 기준 장수: 작가별 설정 우선 (0 = 분리 안 함), 없으면 사이트 설정 ('일러 분리' 체크된 분류에만 적용)
         var categoryRoot = site.RootFor(m.Category);
@@ -263,6 +247,23 @@ public class SyncEngine
                 root = site.IllustRoot;
         }
         var isIllust = root != categoryRoot;
+
+        // 평평하게 저장: 게시물 폴더 없이 작가 폴더에 "{title}_{index}.ext" 꼴로 바로 저장 (사이트 옵션).
+        // '일러스트 게시물만'이면 일러스트 루트로 분리되는 낱장 일러에만 적용하고 나머지는 폴더로 저장
+        var flat = site.FlatFiles && (!site.FlatIllustOnly || isIllust);
+        if (flat)
+        {
+            var template = string.IsNullOrWhiteSpace(site.FlatFileNameTemplate) ? "{title}_{index}" : site.FlatFileNameTemplate;
+            var baseName = Fill(template);
+            var width = Math.Max(2, items.Count.ToString().Length);
+            items = items.Select((item, i) =>
+            {
+                var ext = Path.GetExtension(item.FileName);
+                var name = NameSanitizer.Sanitize(baseName.Replace("{index}", (i + 1).ToString().PadLeft(width, '0'))).TrimEnd('.', ' ');
+                if (string.IsNullOrWhiteSpace(name)) name = $"{post.PostId}_{i + 1:D2}";
+                return item with { FileName = name + ext };
+            }).ToList();
+        }
         var postDir = flat ? Path.Combine(root, m.FolderName) : Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 

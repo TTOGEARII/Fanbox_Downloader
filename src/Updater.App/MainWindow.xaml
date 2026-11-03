@@ -328,6 +328,8 @@
                                                 IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
                                                 ToolTip="{}{title}=제목, {index}=파일 순번, {id}=게시물번호, {date}=날짜, {creator}=작가ID (확장자는 자동)"/>
                                 </StackPanel>
+                                <CheckBox x:Name="ChkFlatIllustOnly" Margin="24,2,0,0" IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
+                                          ToolTip="'일러 분리'로 일러스트 저장 경로에 들어가는 낱장 일러 게시물에만 적용하고, 그 밖의 게시물은 평소처럼 게시물 폴더로 저장">일러스트(분리 저장) 게시물만 적용 — 나머지는 게시물 폴더로</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
                                            Text="예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다."/>
                                 <WrapPanel Margin="0,6,0,0">
