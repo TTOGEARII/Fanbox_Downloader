@@ -218,21 +218,77 @@
                 </DockPanel>
             </TabItem>
 
-            <!-- 설정 탭: 위 = 사이트별 설정 (현재 사이트), 아래 = 공통 설정 -->
+            <!-- 설정 탭: 위 = 공통 설정 (하나만, 고정), 아래 = 사이트별 설정 (토글로 전환) -->
             <TabItem Header="설정">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20,10,20,8" MaxWidth="760" HorizontalAlignment="Left">
                         <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,10"
                                    Text="모든 설정은 바꾸는 즉시 자동 저장·반영됩니다. 글자 입력칸은 다른 곳을 클릭하면 반영돼요."/>
 
-                        <!-- 사이트 전환 (작가 탭과 같은 선택을 공유 — 버튼은 코드에서 생성) -->
-                        <DockPanel Margin="0,0,0,10">
+                        <!-- ===== 공통 설정 (모든 사이트에 적용) ===== -->
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,0,0,8" FontSize="16">공통 설정</TextBlock>
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}">저장 규칙</TextBlock>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
+                                    <ui:TextBox x:Name="TxtTemplate" Grid.Column="1" Margin="0,3"
+                                                ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
+                                    <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
+                                    <ui:TextBox x:Name="TxtDateFormat" Grid.Row="1" Grid.Column="1" Margin="0,3" Width="160" HorizontalAlignment="Left"
+                                                ToolTip="예: yyyy-MM-dd, yyyyMMdd, yy.MM.dd"/>
+                                    <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                        <ui:TextBox x:Name="TxtParallel" Margin="0,3" Width="70" TextAlignment="Center"/>
+                                        <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0" Text="1~8. 한 게시물 안의 파일을 동시에 받는 수"/>
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="ChkFlatIllustOnly" Margin="0,8,0,0"
+                                          ToolTip="사이트별 '게시물 폴더 없이 작가 폴더에 바로 저장'을 켠 사이트에서, 일러스트 저장 경로로 분리되는 낱장 일러 게시물에만 적용하고 그 밖의 게시물은 평소처럼 게시물 폴더로 저장">평평 저장은 일러스트(분리 저장) 게시물만 적용 — 나머지는 게시물 폴더로</CheckBox>
+                                <TextBlock Style="{StaticResource HintText}"
+                                           Text="모든 사이트에 한 번에 적용됩니다. 각 사이트의 '게시물 폴더 없이 작가 폴더에 바로 저장'이 켜져 있을 때만 의미가 있습니다."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}">자동 실행 스케줄</TextBlock>
+                                <CheckBox x:Name="ChkSchedule" Margin="0,0,0,6">자동 최신화 사용 (프로그램이 트레이에 있을 때 동작 — 로그인된 모든 사이트)</CheckBox>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                            IsEnabled="{Binding IsChecked, ElementName=ChkSchedule}">
+                                    <RadioButton x:Name="RadDaily" GroupName="sched" VerticalAlignment="Center">매일</RadioButton>
+                                    <ui:TextBox x:Name="TxtDailyTime" Width="76" Margin="8,0" ToolTip="HH:mm (예: 03:00)" TextAlignment="Center"/>
+                                    <TextBlock VerticalAlignment="Center" Margin="0,0,28,0">에 실행</TextBlock>
+                                    <RadioButton x:Name="RadInterval" GroupName="sched" VerticalAlignment="Center">매</RadioButton>
+                                    <ui:TextBox x:Name="TxtIntervalHours" Width="56" Margin="8,0" TextAlignment="Center"/>
+                                    <TextBlock VerticalAlignment="Center">시간마다 실행</TextBlock>
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource HintText}"
+                                           Text="창을 닫아도 트레이에서 계속 실행됩니다. 완전히 종료하려면 트레이 아이콘 우클릭 → 종료."/>
+                                <TextBlock Style="{StaticResource SectionTitle}" Margin="0,8,0,6">동작</TextBlock>
+                                <WrapPanel>
+                                    <CheckBox x:Name="ChkStartMin" Margin="0,2,18,2">시작 시 트레이로 최소화</CheckBox>
+                                    <CheckBox x:Name="ChkCloseTray" Margin="0,2,18,2">닫기 버튼 → 트레이로 이동</CheckBox>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== 사이트별 설정 (토글로 전환 — 버튼은 코드에서 생성, 작가 탭과 같은 선택을 공유) ===== -->
+                        <DockPanel Margin="0,10,0,10">
+                            <TextBlock DockPanel.Dock="Left" Style="{StaticResource SectionTitle}" FontSize="16" Margin="0,0,14,0" VerticalAlignment="Center">사이트별 설정</TextBlock>
                             <Border DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0"
                                     Background="#14FFFFFF" CornerRadius="8" Padding="3">
                                 <StackPanel x:Name="SettingsSitePanel" Orientation="Horizontal"/>
                             </Border>
                             <TextBlock VerticalAlignment="Center" Foreground="#9A9A9A" FontSize="12" TextWrapping="Wrap"
-                                       Text="사이트별 설정 — 아래 세 카드(계정 · 저장 분류 · 게시물/다운로드)는 선택한 사이트에만 적용됩니다. 그 아래는 공통 설정입니다."/>
+                                       Text="아래 세 카드(계정 · 저장 분류 · 게시물/다운로드)는 선택한 사이트에만 적용됩니다."/>
                         </DockPanel>
 
                         <!-- 계정 (사이트별) -->
@@ -328,10 +384,8 @@
                                                 IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
                                                 ToolTip="{}{title}=제목, {index}=파일 순번, {id}=게시물번호, {date}=날짜, {creator}=작가ID (확장자는 자동)"/>
                                 </StackPanel>
-                                <CheckBox x:Name="ChkFlatIllustOnly" Margin="24,2,0,0" IsEnabled="{Binding IsChecked, ElementName=ChkFlat}"
-                                          ToolTip="'일러 분리'로 일러스트 저장 경로에 들어가는 낱장 일러 게시물에만 적용하고, 그 밖의 게시물은 평소처럼 게시물 폴더로 저장">일러스트(분리 저장) 게시물만 적용 — 나머지는 게시물 폴더로</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
-                                           Text="예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다."/>
+                                           Text="예: {title}_{index} → 제목_01.jpg, 제목_02.jpg … / {id}_{index} → 게시물번호_01.jpg. 글 내용은 '폴더 이름 규칙'으로 지은 .txt로 저장됩니다. 일러스트 게시물만 평평하게 받으려면 위 공통 설정의 '일러스트 게시물만 적용'을 켜세요."/>
                                 <WrapPanel Margin="0,6,0,0">
                                     <CheckBox x:Name="ChkSaveText" Margin="0,2,18,2">글 내용 저장 (post.txt)</CheckBox>
                                     <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
@@ -353,58 +407,6 @@
                                     <CheckBox x:Name="ChkVideos" Margin="0,2,18,2">영상</CheckBox>
                                     <CheckBox x:Name="ChkArchives" Margin="0,2,18,2">압축파일</CheckBox>
                                     <CheckBox x:Name="ChkOthers" Margin="0,2,18,2">기타</CheckBox>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 공통 설정 -->
-                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,10,0,8" FontSize="16">공통 설정</TextBlock>
-                        <Border Style="{StaticResource SettingsCard}">
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource SectionTitle}">저장 규칙</TextBlock>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/><RowDefinition/><RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Style="{StaticResource FieldLabel}">게시물 폴더 이름 규칙</TextBlock>
-                                    <ui:TextBox x:Name="TxtTemplate" Grid.Column="1" Margin="0,3"
-                                                ToolTip="{}{date}=날짜, {title}=제목, {id}=게시물번호, {creator}=작가ID"/>
-                                    <TextBlock Grid.Row="1" Style="{StaticResource FieldLabel}">날짜 형식</TextBlock>
-                                    <ui:TextBox x:Name="TxtDateFormat" Grid.Row="1" Grid.Column="1" Margin="0,3" Width="160" HorizontalAlignment="Left"
-                                                ToolTip="예: yyyy-MM-dd, yyyyMMdd, yy.MM.dd"/>
-                                    <TextBlock Grid.Row="2" Style="{StaticResource FieldLabel}">동시 다운로드 수</TextBlock>
-                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
-                                        <ui:TextBox x:Name="TxtParallel" Margin="0,3" Width="70" TextAlignment="Center"/>
-                                        <TextBlock Style="{StaticResource HintText}" VerticalAlignment="Center" Margin="10,0,0,0" Text="1~8. 한 게시물 안의 파일을 동시에 받는 수"/>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 스케줄·동작 -->
-                        <Border Style="{StaticResource SettingsCard}">
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource SectionTitle}">자동 실행 스케줄</TextBlock>
-                                <CheckBox x:Name="ChkSchedule" Margin="0,0,0,6">자동 최신화 사용 (프로그램이 트레이에 있을 때 동작 — 로그인된 모든 사이트)</CheckBox>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
-                                            IsEnabled="{Binding IsChecked, ElementName=ChkSchedule}">
-                                    <RadioButton x:Name="RadDaily" GroupName="sched" VerticalAlignment="Center">매일</RadioButton>
-                                    <ui:TextBox x:Name="TxtDailyTime" Width="76" Margin="8,0" ToolTip="HH:mm (예: 03:00)" TextAlignment="Center"/>
-                                    <TextBlock VerticalAlignment="Center" Margin="0,0,28,0">에 실행</TextBlock>
-                                    <RadioButton x:Name="RadInterval" GroupName="sched" VerticalAlignment="Center">매</RadioButton>
-                                    <ui:TextBox x:Name="TxtIntervalHours" Width="56" Margin="8,0" TextAlignment="Center"/>
-                                    <TextBlock VerticalAlignment="Center">시간마다 실행</TextBlock>
-                                </StackPanel>
-                                <TextBlock Style="{StaticResource HintText}"
-                                           Text="창을 닫아도 트레이에서 계속 실행됩니다. 완전히 종료하려면 트레이 아이콘 우클릭 → 종료."/>
-                                <TextBlock Style="{StaticResource SectionTitle}" Margin="0,8,0,6">동작</TextBlock>
-                                <WrapPanel>
-                                    <CheckBox x:Name="ChkStartMin" Margin="0,2,18,2">시작 시 트레이로 최소화</CheckBox>
-                                    <CheckBox x:Name="ChkCloseTray" Margin="0,2,18,2">닫기 버튼 → 트레이로 이동</CheckBox>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>

@@ -23,6 +23,10 @@ public class AppSettings
     public string FolderNameTemplate { get; set; } = "{date} {title}";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
 
+    /// <summary>(공통) 사이트의 '평평 저장'(SiteSettings.FlatFiles)을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고,
+    /// 나머지 게시물은 폴더로 저장. 모든 사이트에 한 번에 적용된다.</summary>
+    public bool FlatIllustOnly { get; set; } = false;
+
     public ScheduleSettings Schedule { get; set; } = new();
 
     public bool StartMinimized { get; set; } = false;
@@ -122,7 +126,17 @@ public class AppSettings
             ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonDefaults.Options) ?? new AppSettings()
             : new AppSettings();
         s.MigrateLegacy();
-        foreach (var (key, site) in s.Sites) site.Provider = key.ToLowerInvariant();
+        foreach (var (key, site) in s.Sites)
+        {
+            site.Provider = key.ToLowerInvariant();
+            // 한때 사이트별이었던 '일러스트 게시물만 평평 저장' → 공통 설정으로 (하나라도 켜져 있었으면 켬)
+            if (site.Legacy != null)
+            {
+                if (site.Legacy.TryGetValue("FlatIllustOnly", out var v) && v.ValueKind == JsonValueKind.True)
+                    s.FlatIllustOnly = true;
+                site.Legacy = null;
+            }
+        }
         s.Site(FanboxProvider); // 항상 존재
         return s;
     }
@@ -224,8 +238,10 @@ public class SiteSettings
     public bool FlatFiles { get; set; } = false;
     /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
     public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
-    /// <summary>true면 평평 저장을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고, 나머지 게시물은 폴더로 저장</summary>
-    public bool FlatIllustOnly { get; set; } = false;
+
+    /// <summary>구버전(사이트별 FlatIllustOnly 등) 키 — Load()에서 공통 설정으로 이전한 뒤 비운다</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Legacy { get; set; }
 
     public bool SaveText { get; set; } = true;
     public bool DownloadCoverImage { get; set; } = false;

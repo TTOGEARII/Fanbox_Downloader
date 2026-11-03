@@ -250,7 +250,7 @@ public class SyncEngine
 
         // 평평하게 저장: 게시물 폴더 없이 작가 폴더에 "{title}_{index}.ext" 꼴로 바로 저장 (사이트 옵션).
         // '일러스트 게시물만'이면 일러스트 루트로 분리되는 낱장 일러에만 적용하고 나머지는 폴더로 저장
-        var flat = site.FlatFiles && (!site.FlatIllustOnly || isIllust);
+        var flat = site.FlatFiles && (!_settings.FlatIllustOnly || isIllust);
         if (flat)
         {
             var template = string.IsNullOrWhiteSpace(site.FlatFileNameTemplate) ? "{title}_{index}" : site.FlatFileNameTemplate;

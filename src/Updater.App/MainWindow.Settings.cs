@@ -53,6 +53,7 @@ public partial class MainWindow
         TxtTemplate.Text = _settings.FolderNameTemplate;
         TxtDateFormat.Text = _settings.DateFormat;
         TxtParallel.Text = _settings.MaxParallelDownloads.ToString();
+        ChkFlatIllustOnly.IsChecked = _settings.FlatIllustOnly;
         ChkSchedule.IsChecked = _settings.Schedule.Enabled;
         RadDaily.IsChecked = _settings.Schedule.Mode == ScheduleSettings.ModeDaily;
         RadInterval.IsChecked = _settings.Schedule.Mode == ScheduleSettings.ModeInterval;
@@ -91,7 +92,6 @@ public partial class MainWindow
             TxtPostFilterHint.Text = info.PostHint;
             ChkFlat.IsChecked = site.FlatFiles;
             TxtFlatTemplate.Text = site.FlatFileNameTemplate;
-            ChkFlatIllustOnly.IsChecked = site.FlatIllustOnly;
             ChkSaveText.IsChecked = site.SaveText;
             ChkCover.IsChecked = site.DownloadCoverImage;
             ChkAutoCreate.IsChecked = site.AutoCreateFolders;
@@ -155,7 +155,6 @@ public partial class MainWindow
         current.DownloadFree = ChkFree.IsChecked == true;
         current.FlatFiles = ChkFlat.IsChecked == true;
         current.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
-        current.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         current.SaveText = ChkSaveText.IsChecked == true;
         current.DownloadCoverImage = ChkCover.IsChecked == true;
         current.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
@@ -171,6 +170,7 @@ public partial class MainWindow
         _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
         _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
         _settings.MaxParallelDownloads = ParseClamped(TxtParallel.Text, 1, 8, 3);
+        _settings.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         _settings.Schedule.Enabled = ChkSchedule.IsChecked == true;
         _settings.Schedule.Mode = RadInterval.IsChecked == true ? ScheduleSettings.ModeInterval : ScheduleSettings.ModeDaily;
         _settings.Schedule.DailyTime = TimeOnly.TryParse(TxtDailyTime.Text, out _) ? TxtDailyTime.Text : "03:00";
