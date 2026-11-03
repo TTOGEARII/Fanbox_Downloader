@@ -23,13 +23,6 @@ public class AppSettings
     public string FolderNameTemplate { get; set; } = "{date} {title}";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
 
-    /// <summary>(공통) true면 게시물마다 폴더를 만들지 않고 작가 폴더에 파일을 바로 저장한다 (파일명은 <see cref="FlatFileNameTemplate"/>)</summary>
-    public bool FlatFiles { get; set; } = false;
-    /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
-    public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
-    /// <summary>(공통) 평평 저장을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고, 나머지 게시물은 폴더로 저장</summary>
-    public bool FlatIllustOnly { get; set; } = false;
-
     public ScheduleSettings Schedule { get; set; } = new();
 
     public bool StartMinimized { get; set; } = false;
@@ -128,26 +121,23 @@ public class AppSettings
         var s = File.Exists(path)
             ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonDefaults.Options) ?? new AppSettings()
             : new AppSettings();
+        var topLegacy = s.Legacy; // MigrateLegacy가 비우기 전에 보관 (한때 공통이던 평평 저장 옵션 이전용)
         s.MigrateLegacy();
-        foreach (var (key, site) in s.Sites)
+        foreach (var (key, site) in s.Sites) site.Provider = key.ToLowerInvariant();
+        s.Site(FanboxProvider); // 항상 존재
+        // 한때 공통 설정이었던 평평 저장 옵션(FlatFiles 등)이 최상위에 남아 있으면 모든 사이트에 같은 값으로 넣어준다
+        if (topLegacy != null && topLegacy.TryGetValue("FlatFiles", out var ff))
         {
-            site.Provider = key.ToLowerInvariant();
-            // 한때 사이트별이었던 평평 저장 옵션들 → 공통 설정으로 (하나라도 켜져 있었으면 켬, 규칙은 켜져 있던 사이트 것)
-            if (site.Legacy != null)
+            foreach (var site in s.Sites.Values)
             {
-                if (site.Legacy.TryGetValue("FlatIllustOnly", out var v) && v.ValueKind == JsonValueKind.True)
-                    s.FlatIllustOnly = true;
-                if (site.Legacy.TryGetValue("FlatFiles", out var ff) && ff.ValueKind == JsonValueKind.True)
-                {
-                    s.FlatFiles = true;
-                    if (site.Legacy.TryGetValue("FlatFileNameTemplate", out var t) && t.ValueKind == JsonValueKind.String
-                        && !string.IsNullOrWhiteSpace(t.GetString()))
-                        s.FlatFileNameTemplate = t.GetString()!;
-                }
-                site.Legacy = null;
+                site.FlatFiles = ff.ValueKind == JsonValueKind.True;
+                if (topLegacy.TryGetValue("FlatFileNameTemplate", out var t) && t.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(t.GetString()))
+                    site.FlatFileNameTemplate = t.GetString()!;
+                if (topLegacy.TryGetValue("FlatIllustOnly", out var io))
+                    site.FlatIllustOnly = io.ValueKind == JsonValueKind.True;
             }
         }
-        s.Site(FanboxProvider); // 항상 존재
         return s;
     }
 
@@ -244,9 +234,12 @@ public class SiteSettings
     /// <summary>무료(공개) 게시물을 받는다</summary>
     public bool DownloadFree { get; set; } = false;
 
-    /// <summary>구버전(사이트별 FlatFiles·FlatFileNameTemplate·FlatIllustOnly) 키 — Load()에서 공통 설정으로 이전한 뒤 비운다</summary>
-    [JsonExtensionData]
-    public Dictionary<string, JsonElement>? Legacy { get; set; }
+    /// <summary>true면 게시물마다 폴더를 만들지 않고 작가 폴더에 파일을 바로 저장한다 (파일명은 <see cref="FlatFileNameTemplate"/>)</summary>
+    public bool FlatFiles { get; set; } = false;
+    /// <summary>FlatFiles일 때 파일 이름 규칙 (확장자는 자동). 사용 가능: {title} {index} {id} {date} {creator}</summary>
+    public string FlatFileNameTemplate { get; set; } = "{title}_{index}";
+    /// <summary>true면 평평 저장을 일러스트 분리 대상 게시물(IllustRoot로 가는 낱장 일러)에만 적용하고, 나머지 게시물은 폴더로 저장</summary>
+    public bool FlatIllustOnly { get; set; } = false;
 
     public bool SaveText { get; set; } = true;
     public bool DownloadCoverImage { get; set; } = false;
@@ -319,13 +312,19 @@ public class FileTypeFilter
 public class ScheduleSettings
 {
     public const string ModeDaily = "Daily";
+    public const string ModeWeekly = "Weekly";
+    public const string ModeMonthly = "Monthly";
     public const string ModeInterval = "Interval";
 
     public bool Enabled { get; set; } = false;
-    /// <summary>"Daily" 또는 "Interval"</summary>
+    /// <summary>"Daily" / "Weekly" / "Monthly" / "Interval"</summary>
     public string Mode { get; set; } = ModeDaily;
-    /// <summary>Daily 모드: 실행 시각 (HH:mm)</summary>
+    /// <summary>Daily·Weekly·Monthly 모드: 실행 시각 (HH:mm)</summary>
     public string DailyTime { get; set; } = "03:00";
+    /// <summary>Weekly 모드: 요일 (0=일요일 … 6=토요일)</summary>
+    public int WeeklyDay { get; set; } = 1;
+    /// <summary>Monthly 모드: 날짜 (1~31, 그 달에 없는 날이면 말일)</summary>
+    public int MonthlyDay { get; set; } = 1;
     /// <summary>Interval 모드: 실행 간격 (시간)</summary>
     public int IntervalHours { get; set; } = 6;
     public DateTime? LastRunAt { get; set; }
@@ -337,12 +336,45 @@ public class ScheduleSettings
         if (Mode == ModeInterval)
             return (LastRunAt ?? DateTime.MinValue).AddHours(Math.Max(1, IntervalHours));
 
-        // Daily 모드: 오늘 지정 시각. 이미 그 시각 이후에 실행했거나, 시각이 지났는데 오늘 (수동으로라도) 실행했으면 내일.
+        // 주기 모드 공통: 가장 최근 예정 시각(prev, now 이전)과 그 다음 예정 시각(next).
+        // prev 이후로 한 번도(수동 실행 포함) 돌지 않았으면 prev → '지금 실행', 돌았으면 next.
+        var (prev, next) = Occurrences(now);
+        return LastRunAt == null || LastRunAt < prev ? prev : next;
+    }
+
+    /// <summary>now 기준 직전 예정 시각과 그 다음 예정 시각</summary>
+    private (DateTime Prev, DateTime Next) Occurrences(DateTime now)
+    {
         if (!TimeOnly.TryParse(DailyTime, out var time)) time = new TimeOnly(3, 0);
-        var today = now.Date.Add(time.ToTimeSpan());
-        if (LastRunAt >= today) return today.AddDays(1);
-        if (today > now) return today;
-        return LastRunAt?.Date == now.Date ? today.AddDays(1) : today;
+        var at = time.ToTimeSpan();
+        switch (Mode)
+        {
+            case ModeWeekly:
+            {
+                var day = Math.Clamp(WeeklyDay, 0, 6);
+                var d = now.Date.AddDays(-(((int)now.DayOfWeek - day + 7) % 7)).Add(at);
+                if (d > now) d = d.AddDays(-7);
+                return (d, d.AddDays(7));
+            }
+            case ModeMonthly:
+            {
+                DateTime InMonth(int year, int month)
+                    => new DateTime(year, month, Math.Min(Math.Clamp(MonthlyDay, 1, 31), DateTime.DaysInMonth(year, month))).Add(at);
+                var cur = InMonth(now.Year, now.Month);
+                if (cur > now)
+                {
+                    var lastMonth = now.Date.AddMonths(-1);
+                    return (InMonth(lastMonth.Year, lastMonth.Month), cur);
+                }
+                var nextMonth = now.Date.AddMonths(1);
+                return (cur, InMonth(nextMonth.Year, nextMonth.Month));
+            }
+            default:
+            {
+                var today = now.Date.Add(at);
+                return today > now ? (today.AddDays(-1), today) : (today, today.AddDays(1));
+            }
+        }
     }
 }
 

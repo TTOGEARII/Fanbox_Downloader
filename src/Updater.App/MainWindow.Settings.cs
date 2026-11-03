@@ -18,6 +18,9 @@ public partial class MainWindow
     /// <summary>사이트별 컨트롤을 채우는 중 — 이때의 값 변경은 자동 반영하지 않는다</summary>
     private bool _loadingSiteUi;
 
+    /// <summary>매주 스케줄 요일 콤보 항목 (인덱스 = DayOfWeek, 0=일요일)</summary>
+    private static readonly string[] WeekDayNames = { "일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일" };
+
     /// <summary>사이트마다 다른 안내 문구·주소</summary>
     private record SiteUiInfo(string CookieLabel, string CookieHint, string HomeUrl, string PostHint);
 
@@ -53,12 +56,16 @@ public partial class MainWindow
         TxtTemplate.Text = _settings.FolderNameTemplate;
         TxtDateFormat.Text = _settings.DateFormat;
         TxtParallel.Text = _settings.MaxParallelDownloads.ToString();
-        ChkFlat.IsChecked = _settings.FlatFiles;
-        TxtFlatTemplate.Text = _settings.FlatFileNameTemplate;
-        ChkFlatIllustOnly.IsChecked = _settings.FlatIllustOnly;
         ChkSchedule.IsChecked = _settings.Schedule.Enabled;
-        RadDaily.IsChecked = _settings.Schedule.Mode == ScheduleSettings.ModeDaily;
-        RadInterval.IsChecked = _settings.Schedule.Mode == ScheduleSettings.ModeInterval;
+        var mode = _settings.Schedule.Mode;
+        RadWeekly.IsChecked = mode == ScheduleSettings.ModeWeekly;
+        RadMonthly.IsChecked = mode == ScheduleSettings.ModeMonthly;
+        RadInterval.IsChecked = mode == ScheduleSettings.ModeInterval;
+        RadDaily.IsChecked = !(RadWeekly.IsChecked == true || RadMonthly.IsChecked == true || RadInterval.IsChecked == true);
+        if (CmbWeekDay.Items.Count == 0)
+            foreach (var name in WeekDayNames) CmbWeekDay.Items.Add(name);
+        CmbWeekDay.SelectedIndex = Math.Clamp(_settings.Schedule.WeeklyDay, 0, 6);
+        TxtMonthDay.Text = Math.Clamp(_settings.Schedule.MonthlyDay, 1, 31).ToString();
         TxtDailyTime.Text = _settings.Schedule.DailyTime;
         TxtIntervalHours.Text = _settings.Schedule.IntervalHours.ToString();
         ChkStartMin.IsChecked = _settings.StartMinimized;
@@ -92,6 +99,9 @@ public partial class MainWindow
             ChkPaid.IsChecked = site.DownloadPaid;
             ChkFree.IsChecked = site.DownloadFree;
             TxtPostFilterHint.Text = info.PostHint;
+            ChkFlat.IsChecked = site.FlatFiles;
+            TxtFlatTemplate.Text = site.FlatFileNameTemplate;
+            ChkFlatIllustOnly.IsChecked = site.FlatIllustOnly;
             ChkSaveText.IsChecked = site.SaveText;
             ChkCover.IsChecked = site.DownloadCoverImage;
             ChkAutoCreate.IsChecked = site.AutoCreateFolders;
@@ -153,6 +163,9 @@ public partial class MainWindow
         current.IllustMaxImages = ParseClamped(TxtIllustMax.Text, 1, 50, 4);
         current.DownloadPaid = ChkPaid.IsChecked == true;
         current.DownloadFree = ChkFree.IsChecked == true;
+        current.FlatFiles = ChkFlat.IsChecked == true;
+        current.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
+        current.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         current.SaveText = ChkSaveText.IsChecked == true;
         current.DownloadCoverImage = ChkCover.IsChecked == true;
         current.AutoCreateFolders = ChkAutoCreate.IsChecked == true;
@@ -168,11 +181,13 @@ public partial class MainWindow
         _settings.FolderNameTemplate = string.IsNullOrWhiteSpace(TxtTemplate.Text) ? "{date} {title}" : TxtTemplate.Text;
         _settings.DateFormat = string.IsNullOrWhiteSpace(TxtDateFormat.Text) ? "yyyy-MM-dd" : TxtDateFormat.Text;
         _settings.MaxParallelDownloads = ParseClamped(TxtParallel.Text, 1, 8, 3);
-        _settings.FlatFiles = ChkFlat.IsChecked == true;
-        _settings.FlatFileNameTemplate = string.IsNullOrWhiteSpace(TxtFlatTemplate.Text) ? "{title}_{index}" : TxtFlatTemplate.Text.Trim();
-        _settings.FlatIllustOnly = ChkFlatIllustOnly.IsChecked == true;
         _settings.Schedule.Enabled = ChkSchedule.IsChecked == true;
-        _settings.Schedule.Mode = RadInterval.IsChecked == true ? ScheduleSettings.ModeInterval : ScheduleSettings.ModeDaily;
+        _settings.Schedule.Mode = RadInterval.IsChecked == true ? ScheduleSettings.ModeInterval
+            : RadWeekly.IsChecked == true ? ScheduleSettings.ModeWeekly
+            : RadMonthly.IsChecked == true ? ScheduleSettings.ModeMonthly
+            : ScheduleSettings.ModeDaily;
+        _settings.Schedule.WeeklyDay = Math.Clamp(CmbWeekDay.SelectedIndex, 0, 6);
+        _settings.Schedule.MonthlyDay = ParseClamped(TxtMonthDay.Text, 1, 31, 1);
         _settings.Schedule.DailyTime = TimeOnly.TryParse(TxtDailyTime.Text, out _) ? TxtDailyTime.Text : "03:00";
         _settings.Schedule.IntervalHours = ParseClamped(TxtIntervalHours.Text, 1, 24 * 30, 6);
         _settings.StartMinimized = ChkStartMin.IsChecked == true;
@@ -211,7 +226,7 @@ public partial class MainWindow
                  {
                      ChkPaid, ChkFree, ChkFlat, ChkFlatIllustOnly, ChkSaveText, ChkCover, ChkAutoCreate, ChkExternal, ChkAutoExtract,
                      ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
-                     ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
+                     ChkStartMin, ChkCloseTray, RadDaily, RadWeekly, RadMonthly, RadInterval,
                  })
         {
             toggle.Checked += (_, _) => QueueAutoApply();
@@ -220,9 +235,10 @@ public partial class MainWindow
         foreach (var tb in new Control[]
                  {
                      PwdSession, TxtIllustRoot, TxtIllustMax, TxtFlatTemplate, TxtTemplate, TxtDateFormat,
-                     TxtParallel, TxtDailyTime, TxtIntervalHours,
+                     TxtParallel, TxtDailyTime, TxtIntervalHours, TxtMonthDay,
                  })
             tb.LostFocus += (_, _) => QueueAutoApply();
+        CmbWeekDay.SelectionChanged += (_, _) => QueueAutoApply();
     }
 
     /// <summary>처음 쓸 때 안내 배너 (현재 사이트 기준) — 쿠키나 저장 경로가 없으면 무엇을 해야 하는지 보여준다.</summary>
