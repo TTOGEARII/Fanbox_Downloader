@@ -82,16 +82,29 @@ public class SyncEngine
 
     private static bool SafeContains(string a, string b) => b.Length >= 4 && a.Contains(b);
 
+    /// <summary>프로바이더 하나로 동기화 (호환용 — 여러 사이트는 목록을 받는 오버로드 사용)</summary>
+    public Task<SyncSummary> RunAsync(ISiteProvider provider, CancellationToken ct,
+        IReadOnlyDictionary<string, DateTime>? reDownloadSince = null,
+        HashSet<string>? onlyCreators = null)
+        => RunAsync(new[] { provider }, ct, reDownloadSince, onlyCreators);
+
+    /// <param name="providers">로그인된 프로바이더들. 작가는 creatorId 접두어(<see cref="CreatorIds"/>)로 어느 사이트인지 정해진다.</param>
     /// <param name="reDownloadSince">creatorId → 날짜: 이 날짜 이후 게시물은 받은 기록이 있어도 다시 받음</param>
     /// <param name="onlyCreators">지정하면 해당 creatorId만 동기화</param>
-    public async Task<SyncSummary> RunAsync(ISiteProvider provider, CancellationToken ct,
+    public async Task<SyncSummary> RunAsync(IReadOnlyList<ISiteProvider> providers, CancellationToken ct,
         IReadOnlyDictionary<string, DateTime>? reDownloadSince = null,
         HashSet<string>? onlyCreators = null)
     {
         var summary = new SyncSummary();
-        Log?.Invoke($"[{provider.Name}] 작가 목록을 가져오는 중...");
-        var creators = await provider.GetFollowedCreatorsAsync(ct);
-        Log?.Invoke($"[{provider.Name}] 팔로우/후원 작가 {creators.Count}명");
+        var byProvider = providers.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        var creators = new List<CreatorInfo>();
+        foreach (var provider in providers)
+        {
+            Log?.Invoke($"[{provider.Name}] 작가 목록을 가져오는 중...");
+            var list = await provider.GetFollowedCreatorsAsync(ct);
+            Log?.Invoke($"[{provider.Name}] 팔로우/후원 작가 {list.Count}명");
+            creators.AddRange(list);
+        }
 
         var matches = MatchFolders(creators);
         Matched?.Invoke(matches);
@@ -103,6 +116,10 @@ public class SyncEngine
             .Where(m => m.CreatorId != null && !_settings.DisabledCreators.Contains(m.CreatorId!))
             .Where(m => onlyCreators == null || onlyCreators.Contains(m.CreatorId!))
             .ToList();
+        // 로그인되지 않은 사이트의 작가는 건너뛴다 (예: Patreon 쿠키 없이 patreon: 작가가 매핑된 경우)
+        var skipped = targets.RemoveAll(m => !byProvider.ContainsKey(CreatorIds.ProviderOf(m.CreatorId!)));
+        if (skipped > 0)
+            Log?.Invoke($"로그인되지 않은 사이트의 작가 {skipped}명 건너뜀 — 설정 탭에서 해당 사이트 쿠키를 입력하세요.");
         Log?.Invoke($"대상 작가 {targets.Count}명 최신화 시작");
 
         int done = 0;
@@ -110,15 +127,17 @@ public class SyncEngine
         {
             ct.ThrowIfCancellationRequested();
             var creatorId = m.CreatorId!;
+            var providerName = CreatorIds.ProviderOf(creatorId);
+            var provider = byProvider[providerName];
             CreatorProgress?.Invoke(creatorId, done, targets.Count);
-            Log?.Invoke($"▶ {m.FolderName} (creatorId: {creatorId}, 작가명: {m.CreatorName})");
+            Log?.Invoke($"▶ {m.FolderName} ({CreatorIds.SiteLabel(creatorId)} creatorId: {creatorId}, 작가명: {m.CreatorName})");
 
             DateTime? since = reDownloadSince != null && reDownloadSince.TryGetValue(creatorId, out var s) ? s : null;
             // 더 처리할 것이 없는 게시물 판정. 지난 동기화를 끝까지 마친 작가는 최신 페이지가 전부 이 상태면
             // 더 오래된 페이지를 조회하지 않는다 (작가당 수십 번의 API 호출을 1~2번으로 줄임).
             // '다시 받기' 중이거나 지난번에 중단·오류가 있었으면 전체 페이지를 다시 훑는다.
             bool IsSettled(RemotePost p) =>
-                !p.IsAccessible || (_settings.PaidPostsOnly && p.FeeRequired <= 0) || _state.Contains(creatorId, p.PostId);
+                !p.IsAccessible || !_settings.AllowsPost(providerName, p.FeeRequired) || _state.Contains(creatorId, p.PostId);
             var canStopEarly = since == null && _state.IsComplete(creatorId);
 
             int newCount = 0, errorsBefore = summary.Errors;
@@ -134,8 +153,8 @@ public class SyncEngine
                     bool force = since != null && post.PublishedAt >= since;
                     if (!force && _state.Contains(creatorId, post.PostId)) continue;
                     if (!post.IsAccessible) { summary.LockedSkipped++; continue; }
-                    // 플랜 구독 게시물만 받기: 무료 공개 글(feeRequired=0)은 제외
-                    if (_settings.PaidPostsOnly && post.FeeRequired <= 0) continue;
+                    // 유료/무료 게시물 수신 설정 (FANBOX: 플랜 구독 글만 / Patreon: 유료·무료 체크)
+                    if (!_settings.AllowsPost(providerName, post.FeeRequired)) continue;
 
                     try
                     {

@@ -252,14 +252,14 @@ public partial class MainWindow
         if (SelectedRow is { } row) OpenFolder(row);
     }
 
-    private void MenuOpenFanbox_Click(object sender, RoutedEventArgs e)
+    private void MenuOpenCreatorPage_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedRow is not { IsMapped: true } row)
         {
             TxtStatusBar.Text = "매칭된 작가가 아닙니다 — 먼저 매핑하세요.";
             return;
         }
-        OpenExternal($"https://{row.CreatorId}.fanbox.cc");
+        OpenExternal(CreatorIds.CreatorPageUrl(row.CreatorId));
     }
 
     private void MenuMapCreator_Click(object sender, RoutedEventArgs e)
@@ -306,19 +306,42 @@ public partial class MainWindow
 
     // ---------- 작가 목록 · 매칭 ----------
 
-    /// <summary>팔로우/후원 작가 목록을 가져와 캐시에 저장. 쿠키 미설정이면 안내 후 null.</summary>
-    private async Task<List<CreatorInfo>?> FetchCreatorsAsync()
+    /// <summary>로그인된 모든 사이트의 팔로우/후원 작가 목록을 가져와 캐시에 저장. 쿠키 미설정이면 안내 후 null.
+    /// 한 사이트가 실패해도 나머지는 반영하며(로그에 기록), 전부 실패하면 예외.</summary>
+    /// <param name="onlyProvider">지정하면 그 사이트만 새로 가져오고 다른 사이트의 캐시는 유지 (연결 확인 버튼용)</param>
+    private async Task<List<CreatorInfo>?> FetchCreatorsAsync(string? onlyProvider = null)
     {
-        var provider = await AcquireProviderAsync(CancellationToken.None);
-        if (provider == null) return null;
+        var providers = await AcquireProvidersAsync(CancellationToken.None, onlyProvider);
+        if (providers == null) return null;
         _fetchingCreators = true;
+        var fetched = new List<CreatorInfo>();
+        var errors = new List<string>();
+        var succeeded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            _creatorCache = await provider.GetFollowedCreatorsAsync(CancellationToken.None);
+            foreach (var provider in providers)
+            {
+                try
+                {
+                    fetched.AddRange(await provider.GetFollowedCreatorsAsync(CancellationToken.None));
+                    succeeded.Add(provider.Name);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{CreatorIds.ProviderLabel(provider.Name)}: {ex.Message}");
+                    ReleaseProvider(provider.Name); // 세션 만료 등은 다음에 새로 띄워서 복구
+                }
+            }
         }
         finally { _fetchingCreators = false; }
+        foreach (var e in errors) AppendLog($"[오류] 작가 목록 조회 실패 — {e}");
+        if (succeeded.Count == 0)
+            throw new InvalidOperationException(string.Join("\n", errors));
+
+        // 조회에 성공한 사이트의 작가만 교체하고, 이번에 조회하지 않았거나 실패한 사이트의 캐시는 유지
+        _creatorCache = _creatorCache.Where(c => !succeeded.Contains(c.Provider)).Concat(fetched).ToList();
         // 작가명 캐시 갱신 — 재시작 후에도 그리드에 작가명이 바로 보이게
-        foreach (var c in _creatorCache)
+        foreach (var c in fetched)
             _settings.CreatorNames[c.CreatorId] = c.DisplayName;
         _settings.Save(App.SettingsPath);
         return _creatorCache;

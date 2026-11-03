@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Updater.Core;
+using Updater.Providers.Browser;
 
 namespace Updater.Providers.Fanbox;
 
@@ -21,7 +22,8 @@ public partial class FanboxProvider : ISiteProvider
     public FanboxProvider(string sessionId, int requestDelayMs, string userDataFolder)
     {
         _delayMs = requestDelayMs;
-        _browser = new BrowserClient(sessionId, userDataFolder);
+        _browser = new BrowserClient("https://www.fanbox.cc/",
+            new[] { new BrowserCookie("FANBOXSESSID", sessionId, ".fanbox.cc") }, userDataFolder);
 
         var handler = new HttpClientHandler
         {
@@ -251,14 +253,7 @@ public partial class FanboxProvider : ISiteProvider
         if (url == null || !seen.Add(url)) return;
         var name = f.TryGetProperty("name", out var n) ? n.GetString() ?? "file" : "file";
         var ext = (f.TryGetProperty("extension", out var e) ? e.GetString() ?? "" : "").ToLowerInvariant();
-        var kind = ext switch
-        {
-            "mp4" or "mov" or "avi" or "wmv" or "webm" or "mkv" or "gif" => FileKind.Video,
-            "zip" or "rar" or "7z" => FileKind.Archive,
-            "png" or "jpg" or "jpeg" or "webp" or "psd" or "clip" => FileKind.Image,
-            _ => FileKind.Other,
-        };
-        content.Items.Add(new DownloadItem(url, $"{name}.{ext}", kind));
+        content.Items.Add(new DownloadItem(url, $"{name}.{ext}", FileKinds.FromExtension(ext)));
     }
 
     // ---------- 파일 다운로드 (일반 HTTP — 파일 서버는 TLS 차단 없음) ----------

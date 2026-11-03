@@ -68,8 +68,11 @@ public class ArtistRow : ObservableRow
     public string CreatorId
     {
         get => _creatorId;
-        set { if (Set(ref _creatorId, value)) Raise(nameof(IsMapped)); }
+        set { if (Set(ref _creatorId, value)) { Raise(nameof(IsMapped)); Raise(nameof(Site)); } }
     }
+
+    /// <summary>creatorId 접두어로 정해지는 사이트 이름 (FANBOX / Patreon). 미매핑이면 빈칸</summary>
+    public string Site => IsMapped ? Updater.Core.CreatorIds.SiteLabel(_creatorId) : "";
     public string CreatorName { get => _creatorName; set => Set(ref _creatorName, value); }
     public MatchStatus Status
     {

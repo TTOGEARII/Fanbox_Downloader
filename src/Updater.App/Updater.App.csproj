@@ -27,6 +27,7 @@
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\Updater.Core\Updater.Core.csproj" />
     <ProjectReference Include="..\Updater.Providers.Fanbox\Updater.Providers.Fanbox.csproj" />
+    <ProjectReference Include="..\Updater.Providers.Patreon\Updater.Providers.Patreon.csproj" />
   </ItemGroup>
 
 </Project>

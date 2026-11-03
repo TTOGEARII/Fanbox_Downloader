@@ -11,55 +11,82 @@ public partial class MainWindow
 
     private CancellationTokenSource? _syncCts;
     private bool _syncRunning;
-    private ISiteProvider? _provider;
-    private string? _providerSession;
+    /// <summary>프로바이더 이름 → 띄워 둔 프로바이더와 그때의 세션 쿠키 (사이트마다 하나)</summary>
+    private readonly Dictionary<string, (ISiteProvider Provider, string Session)> _providers = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _providerLastUsed;
 
     /// <summary>네트워크 작업 중(동기화 또는 작가 목록 조회) — 이때는 프로바이더를 바꾸거나 해제하지 않는다</summary>
     private bool IsBusy => _syncRunning || _fetchingCreators;
 
-    /// <summary>로그인된 프로바이더를 돌려준다. 한 번 띄운 WebView2를 쿠키가 바뀌거나 유휴 시간이 지날 때까지 재사용하므로
-    /// '작가 목록 새로고침' 뒤 바로 '지금 최신화'를 눌러도 브라우저 엔진을 다시 띄우지 않는다. 쿠키가 없으면 안내 후 null.</summary>
-    private async Task<ISiteProvider?> AcquireProviderAsync(CancellationToken ct)
+    /// <summary>로그인된 프로바이더들을 돌려준다. 한 번 띄운 WebView2를 쿠키가 바뀌거나 유휴 시간이 지날 때까지 재사용하므로
+    /// '작가 목록 새로고침' 뒤 바로 '지금 최신화'를 눌러도 브라우저 엔진을 다시 띄우지 않는다.
+    /// 쿠키가 하나도 없으면 안내 후 null. 일부 사이트 로그인이 실패하면 로그에 남기고 나머지로 진행하며, 전부 실패하면 예외.</summary>
+    /// <param name="onlyProvider">지정하면 그 사이트만 (연결 확인 버튼용)</param>
+    private async Task<List<ISiteProvider>?> AcquireProvidersAsync(CancellationToken ct, string? onlyProvider = null)
     {
-        var account = _settings.ActiveFanboxAccount;
-        if (account == null)
+        var accounts = _settings.ActiveAccounts;
+        if (onlyProvider != null)
+            accounts = accounts.Where(a => string.Equals(a.Provider, onlyProvider, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (accounts.Count == 0)
         {
-            ShowInfo("설정 탭에서 FANBOXSESSID 쿠키를 먼저 입력하세요.");
+            ShowInfo(onlyProvider == AppSettings.PatreonProvider
+                ? "설정 탭에서 Patreon session_id 쿠키를 먼저 입력하세요."
+                : "설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
             Tabs.SelectedIndex = 1;
-            PwdSession.Focus();
+            (onlyProvider == AppSettings.PatreonProvider ? PwdPatreonSession : PwdSession).Focus();
             return null;
         }
-        if (_provider != null && _providerSession != account.SessionId && !IsBusy)
-            ReleaseProvider();
-        if (_provider == null)
+
+        var result = new List<ISiteProvider>();
+        var errors = new List<string>();
+        foreach (var account in accounts)
         {
-            var prev = TxtStatus.Text;
-            TxtStatus.Text = "브라우저 엔진 초기화 중...";
-            var p = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
-            try { await p.InitializeAsync(ct); }
-            catch { p.Dispose(); TxtStatus.Text = prev; throw; }
-            _provider = p;
-            _providerSession = account.SessionId;
-            TxtStatus.Text = prev;
+            var label = CreatorIds.ProviderLabel(account.Provider);
+            if (_providers.TryGetValue(account.Provider, out var cur) && cur.Session != account.SessionId && !IsBusy)
+                ReleaseProvider(account.Provider);
+            if (!_providers.ContainsKey(account.Provider))
+            {
+                var prev = TxtStatus.Text;
+                TxtStatus.Text = $"브라우저 엔진 초기화 중... ({label})";
+                var p = ProviderRegistry.Create(account, _settings, App.WebViewDataDir)!;
+                try { await p.InitializeAsync(ct); }
+                catch (OperationCanceledException) { p.Dispose(); TxtStatus.Text = prev; throw; }
+                catch (Exception ex)
+                {
+                    p.Dispose();
+                    TxtStatus.Text = prev;
+                    errors.Add($"{label}: {ex.Message}");
+                    continue;
+                }
+                _providers[account.Provider] = (p, account.SessionId);
+                TxtStatus.Text = prev;
+            }
+            result.Add(_providers[account.Provider].Provider);
         }
+        foreach (var e in errors) AppendLog($"[오류] 로그인 실패 — {e}");
+        if (result.Count == 0)
+            throw new InvalidOperationException(string.Join("\n", errors));
         _providerLastUsed = DateTime.Now;
-        return _provider;
+        return result;
     }
 
+    /// <summary>띄워 둔 프로바이더 전부 해제</summary>
     private void ReleaseProvider()
     {
-        var p = _provider;
-        _provider = null;
-        _providerSession = null;
-        if (p == null) return;
+        foreach (var name in _providers.Keys.ToList()) ReleaseProvider(name);
+    }
+
+    private void ReleaseProvider(string providerName)
+    {
+        if (!_providers.Remove(providerName, out var entry)) return;
         // BrowserClient 종료는 UI 스레드 합류를 몇 초 기다릴 수 있어 백그라운드에서 정리한다
+        var p = entry.Provider;
         Task.Run(() => { try { p.Dispose(); } catch { } });
     }
 
     private void ReleaseProviderIfIdle()
     {
-        if (_provider != null && !IsBusy && DateTime.Now - _providerLastUsed > ProviderIdleTimeout)
+        if (_providers.Count > 0 && !IsBusy && DateTime.Now - _providerLastUsed > ProviderIdleTimeout)
             ReleaseProvider();
     }
 
@@ -93,9 +120,9 @@ public partial class MainWindow
         HashSet<string>? onlyCreators = null)
     {
         if (IsBusy) return;
-        if (_settings.ActiveFanboxAccount == null)
+        if (_settings.ActiveAccounts.Count == 0)
         {
-            ShowInfo("설정 탭에서 FANBOXSESSID 쿠키를 먼저 입력하세요.");
+            ShowInfo("설정 탭에서 FANBOXSESSID 또는 Patreon session_id 쿠키를 먼저 입력하세요.");
             Tabs.SelectedIndex = 1;
             return;
         }
@@ -126,9 +153,9 @@ public partial class MainWindow
         try
         {
             // 프로바이더는 동기화가 끝나도 유지한다 (유휴 5분 뒤 자동 해제) — 연속 작업 때 WebView2 재기동을 피함
-            var provider = await AcquireProviderAsync(_syncCts.Token);
-            if (provider == null) return;
-            var summary = await engine.RunAsync(provider, _syncCts.Token, reDownloadSince, onlyCreators);
+            var providers = await AcquireProvidersAsync(_syncCts.Token);
+            if (providers == null) return;
+            var summary = await engine.RunAsync(providers, _syncCts.Token, reDownloadSince, onlyCreators);
             _providerLastUsed = DateTime.Now;
 
             Progress.Value = 100;
@@ -169,6 +196,7 @@ public partial class MainWindow
         BtnRefresh.IsEnabled = !running;
         BtnRedownload.IsEnabled = !running;
         BtnTestSession.IsEnabled = !running;
+        BtnTestPatreon.IsEnabled = !running;
         BtnStop.IsEnabled = running;
     }
 

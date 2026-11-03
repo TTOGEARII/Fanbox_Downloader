@@ -16,6 +16,9 @@ public partial class MainWindow
     private void LoadSettingsToUi()
     {
         PwdSession.Password = _settings.GetAccount(AppSettings.FanboxProvider)?.SessionId ?? "";
+        PwdPatreonSession.Password = _settings.GetAccount(AppSettings.PatreonProvider)?.SessionId ?? "";
+        ChkPatreonPaid.IsChecked = _settings.PatreonDownloadPaid;
+        ChkPatreonFree.IsChecked = _settings.PatreonDownloadFree;
         _categoryRows.Clear();
         foreach (var c in _settings.CategoryRoots)
         {
@@ -73,10 +76,17 @@ public partial class MainWindow
             if (dupCount > 0) { ShowInfo("분류 이름이 중복되었습니다."); return; }
         }
 
-        var fanbox = _settings.EnsureAccount(AppSettings.FanboxProvider);
-        var newSession = PwdSession.Password.Trim();
-        var sessionChanged = fanbox.SessionId != newSession;
-        fanbox.SessionId = newSession;
+        // 계정 쿠키 — 바뀐 사이트의 프로바이더만 다시 띄우게 기록
+        var changedSessions = new List<string>();
+        foreach (var (provider, box) in new[] { (AppSettings.FanboxProvider, PwdSession), (AppSettings.PatreonProvider, PwdPatreonSession) })
+        {
+            var acc = _settings.EnsureAccount(provider);
+            var newSession = box.Password.Trim();
+            if (acc.SessionId != newSession) changedSessions.Add(provider);
+            acc.SessionId = newSession;
+        }
+        _settings.PatreonDownloadPaid = ChkPatreonPaid.IsChecked == true;
+        _settings.PatreonDownloadFree = ChkPatreonFree.IsChecked == true;
 
         var rootsChanged = false;
         if (cats.Count > 0) // 자동 반영 중 전부 지워진 순간은 기존 분류를 유지 (최소 1개 필요)
@@ -110,7 +120,7 @@ public partial class MainWindow
         _settings.CloseToTray = ChkCloseTray.IsChecked == true;
 
         _settings.Save(App.SettingsPath);
-        if (sessionChanged && !IsBusy) ReleaseProvider(); // 새 쿠키로 다시 로그인하게
+        if (!IsBusy) foreach (var p in changedSessions) ReleaseProvider(p); // 새 쿠키로 다시 로그인하게
         if (interactive || rootsChanged)
         {
             RefreshCategoryUi();
@@ -140,7 +150,8 @@ public partial class MainWindow
     {
         foreach (var toggle in new ToggleButton[]
                  {
-                     ChkSaveText, ChkCover, ChkAutoCreate, ChkPaidOnly, ChkExternal, ChkAutoExtract,
+                     ChkSaveText, ChkCover, ChkAutoCreate, ChkPaidOnly, ChkPatreonPaid, ChkPatreonFree,
+                     ChkExternal, ChkAutoExtract,
                      ChkDeleteArchive, ChkImages, ChkVideos, ChkArchives, ChkOthers, ChkSchedule,
                      ChkStartMin, ChkCloseTray, RadDaily, RadInterval,
                  })
@@ -150,7 +161,7 @@ public partial class MainWindow
         }
         foreach (var tb in new Control[]
                  {
-                     PwdSession, TxtIllustRoot, TxtIllustMax, TxtTemplate, TxtDateFormat,
+                     PwdSession, PwdPatreonSession, TxtIllustRoot, TxtIllustMax, TxtTemplate, TxtDateFormat,
                      TxtParallel, TxtDailyTime, TxtIntervalHours,
                  })
             tb.LostFocus += (_, _) => QueueAutoApply();
@@ -160,10 +171,10 @@ public partial class MainWindow
     private void UpdateSetupBanner()
     {
         string? title = null, msg = null;
-        if (_settings.ActiveFanboxAccount == null)
+        if (_settings.ActiveAccounts.Count == 0)
         {
-            title = "1단계 · FANBOX 쿠키를 입력하세요";
-            msg = "설정 탭 → 계정에 브라우저의 FANBOXSESSID 쿠키 값을 넣으면 팔로우/후원 작가 목록을 가져올 수 있습니다.";
+            title = "1단계 · 사이트 쿠키를 입력하세요";
+            msg = "설정 탭 → 계정에 브라우저의 FANBOXSESSID(FANBOX) 또는 session_id(Patreon) 쿠키 값을 넣으면 팔로우/후원 작가 목록을 가져올 수 있습니다.";
         }
         else if (_settings.ExistingRoots().Count == 0)
         {
@@ -183,31 +194,41 @@ public partial class MainWindow
 
     private void LinkFanbox_Click(object sender, RoutedEventArgs e) => OpenExternal("https://www.fanbox.cc/");
 
-    /// <summary>쿠키로 실제 로그인되는지 확인 — 작가 목록 조회가 되면 성공.</summary>
-    private async void BtnTestSession_Click(object sender, RoutedEventArgs e)
+    private void LinkPatreon_Click(object sender, RoutedEventArgs e) => OpenExternal("https://www.patreon.com/home");
+
+    private void BtnTestSession_Click(object sender, RoutedEventArgs e)
+        => _ = TestSessionAsync(AppSettings.FanboxProvider, BtnTestSession, "FANBOXSESSID");
+
+    private void BtnTestPatreon_Click(object sender, RoutedEventArgs e)
+        => _ = TestSessionAsync(AppSettings.PatreonProvider, BtnTestPatreon, "Patreon session_id");
+
+    /// <summary>쿠키로 실제 로그인되는지 확인 — 해당 사이트의 작가 목록 조회가 되면 성공.</summary>
+    private async Task TestSessionAsync(string provider, System.Windows.Controls.Primitives.ButtonBase button, string cookieName)
     {
         _applyDebounce.Stop();
         ApplySettings(interactive: false);
-        if (_settings.ActiveFanboxAccount == null) { ShowInfo("FANBOXSESSID 쿠키를 먼저 입력하세요."); return; }
+        if (_settings.ActiveAccount(provider) == null) { ShowInfo($"{cookieName} 쿠키를 먼저 입력하세요."); return; }
         if (IsBusy) { ShowInfo("동기화가 끝난 뒤 확인하세요."); return; }
 
-        BtnTestSession.IsEnabled = false;
-        TxtStatus.Text = "로그인 확인 중...";
+        var label = CreatorIds.ProviderLabel(provider);
+        button.IsEnabled = false;
+        TxtStatus.Text = $"{label} 로그인 확인 중...";
         try
         {
-            var creators = await FetchCreatorsAsync();
+            var creators = await FetchCreatorsAsync(onlyProvider: provider);
             if (creators == null) return;
             ApplyMatches(new SyncEngine(_settings, _state, SaveState).MatchFolders(creators));
             TxtStatus.Text = "대기 중";
-            ShowInfo($"로그인 성공 — 팔로우/후원 작가 {creators.Count}명을 확인했습니다.");
+            var count = creators.Count(c => string.Equals(c.Provider, provider, StringComparison.OrdinalIgnoreCase));
+            ShowInfo($"{label} 로그인 성공 — 팔로우/후원 작가 {count}명을 확인했습니다.");
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = "로그인 확인 실패";
+            TxtStatus.Text = $"{label} 로그인 확인 실패";
             AppendLog($"[오류] {ex.Message}");
-            ShowInfo($"로그인에 실패했습니다.\n\n{ex.Message}");
+            ShowInfo($"{label} 로그인에 실패했습니다.\n\n{ex.Message}");
         }
-        finally { BtnTestSession.IsEnabled = true; }
+        finally { button.IsEnabled = true; }
     }
 
     // ---------- 분류 그리드 ----------

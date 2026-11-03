@@ -63,7 +63,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _ = CheckForUpdatesAsync();
 
         // 작가명 캐시가 비어 있으면(캐시 유실 등) 시작할 때 한 번 자동 새로고침해 복구한다
-        if (_settings.CreatorNames.Count == 0 && _settings.ActiveFanboxAccount != null)
+        if (_settings.CreatorNames.Count == 0 && _settings.ActiveAccounts.Count > 0)
             Loaded += (_, _) => BtnRefresh_Click(this, new RoutedEventArgs());
 
         // 설정 탭 자동 반영: 컨트롤 변경 600ms 뒤 저장·적용 (타이핑 중 과도한 재스캔 방지)

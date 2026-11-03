@@ -1,6 +1,6 @@
 # Fanbox Updater
 
-FANBOX에서 팔로우/후원 중인 작가의 게시물을 원하는 폴더(로컬 디스크·NAS 등 아무 경로)에 최신화하는 Windows 프로그램입니다.
+FANBOX·Patreon에서 팔로우/후원 중인 작가의 게시물을 원하는 폴더(로컬 디스크·NAS 등 아무 경로)에 최신화하는 Windows 프로그램입니다.
 
 ## 설치
 
@@ -23,6 +23,7 @@ Windows 설정 → 앱 → 설치된 앱 → **Fanbox Updater** → 제거로도
 
 1. **쿠키 입력** — 설정 탭 → 계정에 `FANBOXSESSID` 쿠키 값을 넣고 [연결 확인]을 눌러 로그인되는지 확인합니다.
    (브라우저에서 fanbox.cc 로그인 → F12 → Application → Cookies → fanbox.cc → `FANBOXSESSID`)
+   Patreon도 쓰려면 같은 방법으로 patreon.com의 `session_id` 쿠키를 넣습니다. 한 사이트만 써도 됩니다.
 2. **저장 폴더 지정** — 설정 탭 → 저장 분류에서 게시물을 받을 폴더를 고릅니다. 그 폴더 바로 아래 하위 폴더가 작가 폴더가 됩니다.
 3. **작가 매칭** — 상단 [작가 목록 새로고침]을 누르면 폴더와 작가를 자동으로 짝지어 줍니다. 안 된 폴더(주황)는 [선택]으로 직접 고릅니다.
 4. **▶ 지금 최신화** — 동기화가 켜진 작가의 새 게시물을 받습니다.
@@ -36,18 +37,20 @@ Windows 설정 → 앱 → 설치된 앱 → **Fanbox Updater** → 제거로도
 ### 작가 탭
 - 상단 요약(폴더 수 · 매핑 · 미매핑 · 동기화 대상)과 검색창(폴더명·작가명·ID), 분류 필터
 - 저장 폴더 ↔ 작가 자동 매칭. 매핑 여부가 ✔/! 아이콘과 행 색으로 표시되고, 매핑된 작가가 위로 정렬됩니다.
-- 매칭 안 된 폴더는 **[선택] 버튼**으로 팔로우/후원 작가 목록에서 고르거나(검색 가능, 더블클릭으로 바로 매핑), creatorId 칸에 직접 입력 (작가 주소 `https://xxxx.fanbox.cc`의 `xxxx`)
+- 매칭 안 된 폴더는 **[선택] 버튼**으로 팔로우/후원 작가 목록에서 고르거나(검색 가능, 더블클릭으로 바로 매핑), creatorId 칸에 직접 입력 (FANBOX: 작가 주소 `https://xxxx.fanbox.cc`의 `xxxx` / Patreon: `patreon:이름` — 주소 `https://www.patreon.com/이름`의 `이름`)
+- **사이트** 칸에 FANBOX / Patreon이 표시됩니다. 폴더 하나는 작가 한 명(한 사이트)과 연결되므로, 같은 작가를 두 사이트에서 받으려면 폴더를 따로 만드세요 (예: 분류별 저장 루트를 `…\fanbox`, `…\patreon`으로 나누기)
 - **분류** 드롭다운 — 분류에 따라 저장 루트가 달라집니다. 바꾸면 기존 폴더 이동도 물어봅니다.
-- 행 **더블클릭 → 폴더 열기**, 우클릭 → 폴더 열기 / FANBOX 페이지 열기 / 작가 매핑 변경 / 이 작가 다시 받기
+- 행 **더블클릭 → 폴더 열기**, 우클릭 → 폴더 열기 / 작가 페이지 열기 / 작가 매핑 변경 / 이 작가 다시 받기
 - 동기화 체크 해제 → 해당 작가 제외. 기본값은 **매핑된 작가만 켜짐** (미매핑 폴더는 꺼짐)
 - **선택 작가 다시 받기** — 지정 날짜(1개월·3개월·1년·전체 버튼) 이후 게시물을 받은 기록과 무관하게 다시 받습니다. 플랜을 올려 예전 글이 열람 가능해졌을 때도 이걸 쓰세요.
 
 ### 설정 탭
 - 모든 설정은 **바꾸는 즉시 자동 저장·반영**됩니다 (글자 입력칸은 다른 곳을 클릭하면 반영).
-- **계정**: `FANBOXSESSID` 쿠키(표시/숨김 토글)와 [연결 확인] 버튼. 만료되면("인증 실패") 다시 넣어주세요.
+- **계정**: FANBOX `FANBOXSESSID` 쿠키와 Patreon `session_id` 쿠키(표시/숨김 토글), 각각 [연결 확인] 버튼. 만료되면("인증 실패") 다시 넣어주세요.
 - **저장 분류**: 분류(이름+저장 루트 경로)를 원하는 만큼 추가/삭제할 수 있습니다. 각 루트 바로 아래 하위 폴더가 작가 폴더로 매칭되어 즉시 작가 탭에 나타납니다.
 - **일러스트 분리**: '일러 분리'를 체크한 분류의 낱장 일러스트(이미지 N장 이하)는 별도 일러스트 경로로 저장됩니다. 작가별 기준(장)도 그리드에서 지정 가능.
-- **플랜 구독 게시물만 받기**: 무료 공개 글은 받지 않고, 후원 플랜으로 볼 수 있는 유료 게시물만 받습니다. (기본 켜짐)
+- **[FANBOX] 플랜 구독 게시물만 받기**: 무료 공개 글은 받지 않고, 후원 플랜으로 볼 수 있는 유료 게시물만 받습니다. (기본 켜짐)
+- **[Patreon] 유료 / 무료 게시물 받기**: 후원 중인 크리에이터의 후원자 전용(유료) 게시물과 공개(무료) 게시물을 각각 받을지 체크합니다 (기본: 유료만). 게시물에 실제로 첨부된 이미지·영상·첨부파일만 받고, **미리보기(티저·썸네일) 이미지는 받지 않습니다**. Patreon 자체 영상(스트리밍)은 직접 다운로드가 안 되어 post.txt에 링크로 남깁니다.
 - **압축파일 자동 해제**: 받은 zip을 게시물 폴더 안에 자동으로 풉니다 (일본어 파일명 지원). 해제 후 원본 삭제 옵션도 있습니다.
 - 받을 파일 종류(이미지/영상/압축/기타), 폴더 이름 규칙(`{date} {title}` 등), 동시 다운로드 수
 - **자동 실행 스케줄**: 매일 지정 시각 또는 N시간 간격 (트레이 상주 중 동작)
@@ -67,7 +70,8 @@ FanboxUpdater.exe --multi    ← 단일 인스턴스 검사 생략 (개발용 �
 - 작가별 게시물 목록은 최신 페이지부터 확인합니다. **지난 동기화를 끝까지 마친 작가는 최신 페이지에 새 글이 없으면 더 오래된 페이지를 조회하지 않아** 작가가 많아도 동기화가 빠릅니다. 중지·오류가 있었던 작가는 다음에 전체를 다시 훑습니다.
 - '작가 목록 새로고침' 뒤 바로 '지금 최신화'를 눌러도 브라우저 엔진(WebView2)을 다시 띄우지 않고 재사용합니다 (5분 동안 안 쓰면 자동 해제).
 - 이미 받은 게시물은 `state.json` 기준으로 건너뛰므로, 저장 폴더에서 파일을 지워도 다시 받지 않습니다. 다시 받으려면 "선택 작가 다시 받기"를 쓰세요.
-- FANBOX API 일부(post.info)는 Cloudflare가 일반 프로그램을 차단하므로, 숨겨진 WebView2(엣지 엔진)로 실제 브라우저처럼 호출합니다.
+- FANBOX API 일부(post.info)와 Patreon API는 Cloudflare가 일반 프로그램을 차단하므로, 숨겨진 WebView2(엣지 엔진)로 실제 브라우저처럼 호출합니다. Patreon 첨부파일 링크(`patreon.com/file?…`)가 막히면 브라우저 다운로드로 대신 받습니다.
+- Patreon 작가의 creatorId는 `patreon:` 접두어가 붙어 FANBOX 작가와 기록·설정이 섞이지 않습니다.
 
 ## 파일
 
@@ -85,12 +89,14 @@ src\Updater.App\bin\Debug\net8.0-windows\FanboxUpdater.exe --multi
 ```
 
 ```
-src\Updater.Core             사이트 독립 코어 (AppSettings, SyncEngine, ISiteProvider, DownloadState, ExternalDownloader)
-src\Updater.Providers.Fanbox Fanbox 구현 (FanboxProvider + BrowserClient — WebView2로 Cloudflare 우회)
-src\Updater.App              WPF GUI (MainWindow는 Settings/Artists/Sync/Update partial로 분리) + 트레이 + 스케줄러 + Velopack 업데이트
+src\Updater.Core              사이트 독립 코어 (AppSettings, SyncEngine, ISiteProvider, DownloadState, ExternalDownloader)
+src\Updater.Providers.Browser 공용 BrowserClient — 숨긴 WebView2로 Cloudflare 우회 (API fetch + 브라우저 다운로드)
+src\Updater.Providers.Fanbox  FANBOX 구현 (FanboxProvider)
+src\Updater.Providers.Patreon Patreon 구현 (PatreonProvider — pledges/posts JSON:API)
+src\Updater.App               WPF GUI (MainWindow는 Settings/Artists/Sync/Update partial로 분리) + 트레이 + 스케줄러 + Velopack 업데이트
 ```
 
-다른 사이트(Patreon 등)를 추가하려면 `ISiteProvider`를 구현하고 `ProviderRegistry`에 등록하면 됩니다.
+다른 사이트를 추가하려면 `ISiteProvider`를 구현하고 `ProviderRegistry`에 등록하면 됩니다. creatorId는 `CreatorIds.Qualify(provider, id)`로 사이트 접두어를 붙입니다 (FANBOX만 접두어 없음 — 기존 설정 호환).
 
 ### 배포
 

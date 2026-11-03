@@ -1,5 +1,7 @@
+using System.IO;
 using Updater.Core;
 using Updater.Providers.Fanbox;
+using Updater.Providers.Patreon;
 
 namespace Updater.App;
 
@@ -8,14 +10,17 @@ namespace Updater.App;
 /// </summary>
 public static class ProviderRegistry
 {
-    public static readonly string[] SupportedProviders = { AppSettings.FanboxProvider };
+    public static readonly string[] SupportedProviders = { AppSettings.FanboxProvider, AppSettings.PatreonProvider };
 
+    /// <param name="webViewDataDir">WebView2 프로필 루트 — 사이트별 하위 폴더를 써서 쿠키·캐시가 섞이지 않게 한다</param>
     public static ISiteProvider? Create(AccountSettings account, AppSettings settings, string webViewDataDir)
     {
+        if (string.IsNullOrWhiteSpace(account.SessionId)) return null;
         return account.Provider.ToLowerInvariant() switch
         {
-            AppSettings.FanboxProvider when !string.IsNullOrWhiteSpace(account.SessionId)
-                => new FanboxProvider(account.SessionId, settings.RequestDelayMs, webViewDataDir),
+            AppSettings.FanboxProvider => new FanboxProvider(account.SessionId, settings.RequestDelayMs, webViewDataDir),
+            AppSettings.PatreonProvider => new PatreonProvider(account.SessionId, settings.RequestDelayMs,
+                Path.Combine(webViewDataDir, "patreon")),
             _ => null,
         };
     }

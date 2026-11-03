@@ -41,7 +41,7 @@
                                Content="■  중지" Margin="8,0,0,0" Padding="14,8" ToolTip="진행 중인 동기화를 멈춥니다 (Esc)"/>
                     <ui:Button x:Name="BtnRefresh" Click="BtnRefresh_Click"
                                Content="↻  작가 목록 새로고침" Margin="8,0,0,0" Padding="14,8"
-                               ToolTip="FANBOX에서 팔로우/후원 작가 목록을 가져와 폴더와 자동 매칭합니다 (Ctrl+R)"/>
+                               ToolTip="FANBOX·Patreon에서 팔로우/후원 작가 목록을 가져와 폴더와 자동 매칭합니다 (Ctrl+R)"/>
                     <ui:Button x:Name="BtnRedownload" Click="BtnRedownload_Click"
                                Content="선택 작가 다시 받기" Margin="8,0,0,0" Padding="14,8"
                                ToolTip="작가 탭에서 작가를 선택한 뒤, 지정 날짜 이후 게시물을 받은 기록과 무관하게 다시 받습니다"/>
@@ -98,7 +98,7 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="폴더 열기" Click="MenuOpenFolder_Click"/>
-                                <MenuItem Header="FANBOX 페이지 열기" Click="MenuOpenFanbox_Click"/>
+                                <MenuItem Header="작가 페이지 열기 (FANBOX / Patreon)" Click="MenuOpenCreatorPage_Click"/>
                                 <Separator/>
                                 <MenuItem Header="작가 매핑 변경..." Click="MenuMapCreator_Click"/>
                                 <MenuItem Header="이 작가 다시 받기..." Click="BtnRedownload_Click"/>
@@ -154,10 +154,23 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="사이트" Binding="{Binding Site}" IsReadOnly="True" Width="68">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#9A9A9A"/>
+                                        <Setter Property="FontSize" Value="11.5"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Site}" Value="Patreon">
+                                                <Setter Property="Foreground" Value="#FF8A6A"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="작가명" Binding="{Binding CreatorName}" IsReadOnly="True" Width="130"/>
-                            <DataGridTextColumn Binding="{Binding CreatorId}" Width="140">
+                            <DataGridTextColumn Binding="{Binding CreatorId}" Width="150">
                                 <DataGridTextColumn.Header>
-                                    <TextBlock Text="creatorId" ToolTip="작가 주소 https://xxxx.fanbox.cc 의 xxxx. 칸을 더블클릭해 직접 입력할 수도 있습니다"/>
+                                    <TextBlock Text="creatorId" ToolTip="FANBOX: 작가 주소 https://xxxx.fanbox.cc 의 xxxx&#10;Patreon: patreon:이름 (주소 https://www.patreon.com/이름 의 이름)&#10;칸을 더블클릭해 직접 입력할 수도 있습니다"/>
                                 </DataGridTextColumn.Header>
                             </DataGridTextColumn>
                             <DataGridTemplateColumn Header="매핑" Width="56">
@@ -225,7 +238,7 @@
                                 <TextBlock Style="{StaticResource SectionTitle}">계정</TextBlock>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="185"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
@@ -239,6 +252,23 @@
                                     <Run Text="브라우저에서 fanbox.cc 로그인 → F12 → Application → Cookies → fanbox.cc → FANBOXSESSID 값 복사. 만료되면('인증 실패') 다시 넣어주세요."/>
                                     <LineBreak/>
                                     <Hyperlink Click="LinkFanbox_Click" Foreground="#60CDFF">fanbox.cc 열기</Hyperlink>
+                                </TextBlock>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="185"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource FieldLabel}">Patreon session_id</TextBlock>
+                                    <ui:PasswordBox x:Name="PwdPatreonSession" Grid.Column="1" RevealButtonEnabled="True"
+                                                    PlaceholderText="브라우저에서 복사한 session_id 값 (비워 두면 Patreon 사용 안 함)"/>
+                                    <ui:Button x:Name="BtnTestPatreon" Grid.Column="2" Content="연결 확인" Margin="8,0,0,0" Padding="12,5"
+                                               Click="BtnTestPatreon_Click" ToolTip="쿠키로 Patreon에 로그인되는지 확인하고 후원 중인 크리에이터 수를 보여줍니다"/>
+                                </Grid>
+                                <TextBlock Style="{StaticResource HintText}" Margin="0,6,0,0">
+                                    <Run Text="브라우저에서 patreon.com 로그인 → F12 → Application → Cookies → patreon.com → session_id 값 복사. 후원(멤버십) 중인 크리에이터의 게시물을 받습니다. 작가 탭의 creatorId는 patreon:이름 형식입니다."/>
+                                    <LineBreak/>
+                                    <Hyperlink Click="LinkPatreon_Click" Foreground="#60CDFF">patreon.com 열기</Hyperlink>
                                 </TextBlock>
                             </StackPanel>
                         </Border>
@@ -326,9 +356,16 @@
                                     <CheckBox x:Name="ChkCover" Margin="0,2,18,2">표지 이미지 저장</CheckBox>
                                     <CheckBox x:Name="ChkAutoCreate" Margin="0,2,18,2">폴더 없는 팔로우 작가도 자동 생성</CheckBox>
                                 </WrapPanel>
-                                <CheckBox x:Name="ChkPaidOnly" Margin="0,2" FontWeight="SemiBold">플랜 구독 게시물만 받기 (무료 공개 글 제외)</CheckBox>
+                                <CheckBox x:Name="ChkPaidOnly" Margin="0,2" FontWeight="SemiBold">[FANBOX] 플랜 구독 게시물만 받기 (무료 공개 글 제외)</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
                                            Text="체크하면 후원 플랜에 가입해서 볼 수 있는 유료 게시물만 다운로드합니다."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,14,0">[Patreon]</TextBlock>
+                                    <CheckBox x:Name="ChkPatreonPaid" Margin="0,2,18,2">유료(후원자 전용) 게시물 받기</CheckBox>
+                                    <CheckBox x:Name="ChkPatreonFree" Margin="0,2,18,2">무료(공개) 게시물 받기</CheckBox>
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource HintText}"
+                                           Text="후원 중인 크리에이터의 게시물에서 실제로 첨부된 이미지·영상·파일만 받습니다. 미리보기(티저·썸네일) 이미지는 받지 않습니다."/>
                                 <CheckBox x:Name="ChkExternal" Margin="0,2">외부 링크 자동 다운로드 (Dropbox · Google Drive · 직접 링크)</CheckBox>
                                 <TextBlock Style="{StaticResource HintText}"
                                            Text="본문에 걸린 외부 배포 링크를 자동으로 받습니다. 미지원 호스트(MEGA 등)는 post.txt에 링크로 저장됩니다."/>

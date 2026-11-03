@@ -33,6 +33,9 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal" Margin="2,1">
+                            <Border Background="#2AFFFFFF" CornerRadius="4" Padding="5,0" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SiteLabel}" FontSize="10.5" Foreground="#C0C0C0"/>
+                            </Border>
                             <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
                             <TextBlock Text="{Binding CreatorId}" Foreground="#9A9A9A" Margin="8,0,0,0"/>
                         </StackPanel>

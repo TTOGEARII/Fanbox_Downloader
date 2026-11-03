@@ -39,8 +39,23 @@ public class AppSettings
     public bool DownloadCoverImage { get; set; } = false;
     public bool AutoCreateFolders { get; set; } = false;
 
-    /// <summary>true면 플랜 구독(유료)으로 볼 수 있는 게시물만 받고, 무료 공개 게시물은 건너뛴다.</summary>
+    /// <summary>[FANBOX] true면 플랜 구독(유료)으로 볼 수 있는 게시물만 받고, 무료 공개 게시물은 건너뛴다.</summary>
     public bool PaidPostsOnly { get; set; } = true;
+
+    /// <summary>[Patreon] 후원자 전용(유료) 게시물을 받는다.</summary>
+    public bool PatreonDownloadPaid { get; set; } = true;
+    /// <summary>[Patreon] 공개(무료) 게시물을 받는다.</summary>
+    public bool PatreonDownloadFree { get; set; } = false;
+
+    /// <summary>프로바이더별 유료/무료 게시물 수신 설정에 따라 이 게시물을 받을지 판정.
+    /// 미리보기 등 열람 불가 게시물은 여기서 거르지 않는다 (IsAccessible로 따로 처리).</summary>
+    public bool AllowsPost(string provider, int feeRequired)
+    {
+        bool paid = feeRequired > 0;
+        if (string.Equals(provider, PatreonProvider, StringComparison.OrdinalIgnoreCase))
+            return paid ? PatreonDownloadPaid : PatreonDownloadFree;
+        return paid || !PaidPostsOnly;
+    }
 
     public FileTypeFilter FileTypes { get; set; } = new();
     public ScheduleSettings Schedule { get; set; } = new();
@@ -60,6 +75,7 @@ public class AppSettings
     public HashSet<string> DisabledCreators { get; set; } = new();
 
     public const string FanboxProvider = "fanbox";
+    public const string PatreonProvider = "patreon";
 
     /// <summary>해당 프로바이더 계정 (없으면 null)</summary>
     public AccountSettings? GetAccount(string provider)
@@ -77,21 +93,28 @@ public class AppSettings
         return acc;
     }
 
-    /// <summary>사용 가능한(켜져 있고 세션이 입력된) Fanbox 계정. 없으면 null.</summary>
-    public AccountSettings? ActiveFanboxAccount
+    /// <summary>사용 가능한(켜져 있고 세션이 입력된) 계정. 없으면 null.</summary>
+    public AccountSettings? ActiveAccount(string provider)
     {
-        get
-        {
-            var acc = GetAccount(FanboxProvider);
-            return acc is { Enabled: true } && !string.IsNullOrWhiteSpace(acc.SessionId) ? acc : null;
-        }
+        var acc = GetAccount(provider);
+        return acc is { Enabled: true } && !string.IsNullOrWhiteSpace(acc.SessionId) ? acc : null;
     }
+
+    /// <summary>사용 가능한(켜져 있고 세션이 입력된) Fanbox 계정. 없으면 null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public AccountSettings? ActiveFanboxAccount => ActiveAccount(FanboxProvider);
+
+    /// <summary>사용 가능한 계정 전체 (Fanbox → Patreon 순)</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<AccountSettings> ActiveAccounts
+        => new[] { FanboxProvider, PatreonProvider }.Select(ActiveAccount).OfType<AccountSettings>().ToList();
 
     /// <summary>이름으로 분류 찾기 (대소문자 무시)</summary>
     public CategoryRoot? FindCategory(string name)
         => CategoryRoots.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>기본 분류 이름 (첫 항목)</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string DefaultCategory => CategoryRoots.FirstOrDefault()?.Name ?? "";
 
     /// <summary>분류에 해당하는 저장 루트 경로. 없으면 경로가 지정된 첫 분류의 루트, 그것도 없으면 빈 문자열.</summary>
@@ -154,6 +177,7 @@ public class CategoryRoot
 public class AccountSettings
 {
     public string Provider { get; set; } = "fanbox";
+    /// <summary>로그인 세션 쿠키 값 — fanbox: FANBOXSESSID, patreon: session_id</summary>
     public string SessionId { get; set; } = "";
     public bool Enabled { get; set; } = true;
 }

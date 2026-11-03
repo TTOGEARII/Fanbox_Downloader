@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Updater.Core\Updater.Core.csproj" />
+    <ProjectReference Include="..\Updater.Providers.Browser\Updater.Providers.Browser.csproj" />
+  </ItemGroup>
+
+</Project>

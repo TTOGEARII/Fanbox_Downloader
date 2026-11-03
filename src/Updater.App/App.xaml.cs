@@ -28,7 +28,9 @@ public partial class App : System.Windows.Application
             var account = AppSettings.Load(SettingsPath).GetAccount(AppSettings.FanboxProvider);
             if (account != null)
             {
-                using var browser = new Updater.Providers.Fanbox.BrowserClient(account.SessionId, WebViewDataDir);
+                using var browser = new Updater.Providers.Browser.BrowserClient("https://www.fanbox.cc/",
+                    new[] { new Updater.Providers.Browser.BrowserCookie("FANBOXSESSID", account.SessionId, ".fanbox.cc") },
+                    WebViewDataDir);
                 var res = await browser.FetchAsync(
                     $"https://api.fanbox.cc/post.info?postId={e.Args[1]}", CancellationToken.None);
                 File.WriteAllText(Path.Combine(DataDir, "debug_post.json"),
@@ -144,12 +146,31 @@ public partial class App : System.Windows.Application
             var engine = new SyncEngine(settings, state, () => state.Save(StatePath));
             engine.Log += WriteLog;
 
-            foreach (var account in settings.Accounts.Where(a => a.Enabled))
+            // 로그인된 사이트 전부를 한 번에 돌린다 (사이트별로 따로 매칭하면 서로의 작가 폴더를 미매핑으로 보기 때문)
+            var providers = new List<ISiteProvider>();
+            try
             {
-                using var provider = ProviderRegistry.Create(account, settings, WebViewDataDir);
-                if (provider == null) continue;
-                await provider.InitializeAsync(CancellationToken.None);
-                await engine.RunAsync(provider, CancellationToken.None);
+                foreach (var account in settings.ActiveAccounts)
+                {
+                    var provider = ProviderRegistry.Create(account, settings, WebViewDataDir);
+                    if (provider == null) continue;
+                    try
+                    {
+                        await provider.InitializeAsync(CancellationToken.None);
+                        providers.Add(provider);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"[오류] {account.Provider} 로그인 실패: {ex.Message}");
+                        provider.Dispose();
+                    }
+                }
+                if (providers.Count > 0)
+                    await engine.RunAsync(providers, CancellationToken.None);
+            }
+            finally
+            {
+                foreach (var p in providers) p.Dispose();
             }
             settings.Schedule.LastRunAt = DateTime.Now;
             settings.Save(SettingsPath);
