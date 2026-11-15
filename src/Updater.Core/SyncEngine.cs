@@ -251,23 +251,22 @@ public class SyncEngine
         // 평평하게 저장: 게시물 폴더 없이 작가 폴더에 "{title}_{index}.ext" 꼴로 바로 저장 (사이트 옵션).
         // '일러스트 게시물만'이면 일러스트 루트로 분리되는 낱장 일러에만 적용하고 나머지는 폴더로 저장
         var flat = site.FlatFiles && (!site.FlatIllustOnly || isIllust);
+        var postDir = flat ? Path.Combine(root, m.FolderName) : Path.Combine(root, m.FolderName, dirName);
+        bool flatRenamed = false;
         if (flat)
         {
-            var template = string.IsNullOrWhiteSpace(site.FlatFileNameTemplate) ? "{title}_{index}" : site.FlatFileNameTemplate;
-            var baseName = Fill(template);
-            var width = Math.Max(2, items.Count.ToString().Length);
-            items = items.Select((item, i) =>
-            {
-                var ext = Path.GetExtension(item.FileName);
-                var name = NameSanitizer.Sanitize(baseName.Replace("{index}", (i + 1).ToString().PadLeft(width, '0'))).TrimEnd('.', ' ');
-                if (string.IsNullOrWhiteSpace(name)) name = $"{post.PostId}_{i + 1:D2}";
-                return item with { FileName = name + ext };
-            }).ToList();
+            // 제목이 같은 게시물과 파일명이 겹치면 날짜·게시물 ID를 붙여 구분한다 (안 그러면 '이미 있음'으로 전부 건너뛰어 사라짐)
+            var resolved = FlatNamer.Resolve(items, site.FlatFileNameTemplate, post.PostId, Fill,
+                name => File.Exists(Path.Combine(postDir, name)),
+                name => _state.IsFlatFileOfOther(post.CreatorId, name, post.PostId));
+            items = resolved.Items;
+            flatRenamed = resolved.Renamed;
         }
-        var postDir = flat ? Path.Combine(root, m.FolderName) : Path.Combine(root, m.FolderName, dirName);
         Directory.CreateDirectory(postDir);
 
         Log?.Invoke($"  [받는 중] {content.PublishedAt:yyyy-MM-dd} {content.Title}" + (isIllust ? " (일러스트)" : "") + (flat ? $" → 파일 {items.Count}개" : ""));
+        if (flatRenamed && items.Count > 0)
+            Log?.Invoke($"  [이름 겹침] 제목이 같은 게시물의 파일이 이미 있어 '{Path.GetFileNameWithoutExtension(items[0].FileName)}' 꼴로 저장");
         if (site.DownloadCoverImage && !string.IsNullOrEmpty(content.CoverImageUrl))
             items.Add(new DownloadItem(content.CoverImageUrl!, flat ? $"{dirName}_cover.jpg" : "cover.jpg", FileKind.Image));
 
@@ -325,6 +324,8 @@ public class SyncEngine
 
         if (!flat && !Directory.EnumerateFileSystemEntries(postDir).Any())
             Directory.Delete(postDir); // 받을 것이 없던 게시물 — 빈 폴더 정리
+        if (flat)
+            _state.ClaimFlatFiles(post.CreatorId, post.PostId, items.Select(i => NameSanitizer.Sanitize(i.FileName)));
         return true;
     }
 
